@@ -1,0 +1,53 @@
+# Builds the sideloadable arm64 release APK. Called by CI (every PR) and Release (tagged builds).
+# Signed with the Expo template's debug keystore, the same certificate as earlier releases, so it
+# installs over them.
+name: Android APK
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit or tag to build. Defaults to the triggering commit.
+        type: string
+        default: ''
+      apk-name:
+        description: File name of the uploaded APK, which is also the artifact name.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+      - run: pnpm install --frozen-lockfile
+      - name: Build APK
+        run: pnpm --filter app build:android
+        env:
+          # Gradle project property: phones only, as in earlier releases.
+          ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a
+      - name: Name APK
+        run: mv apps/app/android/app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+        env:
+          APK_NAME: ${{ inputs.apk-name }}
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ inputs.apk-name }}
+          archive: false
+          if-no-files-found: error
