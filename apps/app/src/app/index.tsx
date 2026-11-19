@@ -60,7 +60,7 @@ export default function Boxes() {
         <Text style={styles.h1}>Boxes</Text>
         {boxes ? <Text style={styles.muted}>{boxes.length} {q ? 'found' : 'total'}</Text> : null}
       </View>
-      <PrinterBar />
+      <PrinterBar showTable />
       <Button label="＋  New box" big onPress={() => router.push('/new')} />
       <Field
         value={q}

@@ -17,6 +17,12 @@ export type Box = {
 };
 export type BoxSummary = Omit<Box, 'items' | 'photos'> & { item_count: number; preview: string | null };
 
+/** A household device that has a printer connected right now (a row of the connection status table). */
+export type HouseholdPrinter = { device_id: string; device_name: string; printer_name: string | null; last_seen: number };
+export type RemoteLabel = { number: number; title: string; url: string };
+export type QueuedJob = { id: string; label: RemoteLabel; requestedBy: string; createdAt: number };
+export type PrintJob = { id: string; status: 'queued' | 'printing' | 'done' | 'failed'; error?: string | null; via: string | null };
+
 /**
  * Where the Worker lives. On the web build it's the same origin (empty base); the native app and
  * local dev point at the deployed Worker via EXPO_PUBLIC_API_URL.
@@ -84,6 +90,20 @@ export const api = {
   saveItems: (id: string, items: Item[]) =>
     request<{ box: Box }>(`/boxes/${id}/items`, { method: 'PUT', body: JSON.stringify({ items }) }).then((r) => r.box),
   deleteBox: (id: string) => request<{ ok: true }>(`/boxes/${id}`, { method: 'DELETE' }),
+
+  // Household printer sharing (see apps/worker/src/printing.ts).
+  listPrinters: () => request<{ printers: HouseholdPrinter[] }>('/printers').then((r) => r.printers),
+  printerHeartbeat: (body: { deviceId: string; deviceName: string; printerName?: string }) =>
+    request<{ jobs: QueuedJob[] }>('/printers/heartbeat', { method: 'POST', body: JSON.stringify(body) }).then((r) => r.jobs),
+  printerOffline: (deviceId: string) =>
+    request<{ ok: true }>(`/printers/${encodeURIComponent(deviceId)}`, { method: 'DELETE' }),
+  createPrintJob: (deviceId: string, label: RemoteLabel) =>
+    request<{ job: PrintJob }>('/print-jobs', { method: 'POST', body: JSON.stringify({ deviceId, label }) }).then((r) => r.job),
+  getPrintJob: (id: string) => request<{ job: PrintJob }>(`/print-jobs/${id}`).then((r) => r.job),
+  claimPrintJob: (id: string, deviceId: string) =>
+    request<{ ok: true }>(`/print-jobs/${id}/claim`, { method: 'POST', body: JSON.stringify({ deviceId }) }),
+  completePrintJob: (id: string, deviceId: string, result: { ok: boolean; error?: string }) =>
+    request<{ ok: true }>(`/print-jobs/${id}/complete`, { method: 'POST', body: JSON.stringify({ deviceId, ...result }) }),
 };
 
 /** A photo ready for upload: a Blob on web, a file uri on native. */

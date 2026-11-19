@@ -5,7 +5,8 @@ import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, Style
 
 import { api, boxUrl, getHouseholdKey, photoUrl, type Box, type Item } from '@/lib/api';
 import { takeBoxPhoto } from '@/lib/photo';
-import { printLabel, usePrinter } from '@/lib/printer';
+import { printAnywhere, remotePrinters, useHousehold } from '@/lib/household';
+import { usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { LabelPreview } from '@/ui/label-preview';
 import { PrinterBar } from '@/ui/printer-bar';
@@ -25,7 +26,11 @@ export default function BoxScreen() {
   const [saving, setSaving] = useState(false);
   const [addingPhoto, setAddingPhoto] = useState(false);
   const [newItem, setNewItem] = useState('');
+  const [printing, setPrinting] = useState(false);
   const printer = usePrinter();
+  const household = useHousehold();
+  const localReady = printer.status === 'connected' || printer.status === 'printing';
+  const via = localReady ? undefined : remotePrinters(household)[0];
 
   const load = useCallback(async () => {
     try {
@@ -81,11 +86,14 @@ export default function BoxScreen() {
     setNotice(null);
     const b = await save();
     if (!b) return;
+    setPrinting(true);
     try {
-      await printLabel({ number: b.number, title: b.title, url: boxUrl(b.id) });
-      setNotice(`Label for box #${b.number} sent to the printer.`);
+      const { via: printedBy } = await printAnywhere({ number: b.number, title: b.title, url: boxUrl(b.id) });
+      setNotice(printedBy ? `Label for box #${b.number} printed via ${printedBy}.` : `Label for box #${b.number} sent to the printer.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPrinting(false);
     }
   }
 
@@ -212,10 +220,14 @@ export default function BoxScreen() {
         <LabelPreview input={{ number: box.number, title: draft.title || `Box ${box.number}`, url: boxUrl(box.id) }} />
         <View style={{ alignSelf: 'stretch', gap: space(2) }}>
           <Button
-            label={printer.status === 'printing' ? 'Printing…' : dirty ? 'Save & print label' : 'Print label'}
+            label={
+              printing || printer.status === 'printing'
+                ? 'Printing…'
+                : `${dirty ? 'Save & print label' : 'Print label'}${via ? ` via ${via.device_name}` : ''}`
+            }
             big
-            busy={printer.status === 'printing' || saving}
-            disabled={printer.status === 'unsupported'}
+            busy={printing || printer.status === 'printing' || saving}
+            disabled={printer.status === 'unsupported' && !via}
             onPress={print}
           />
           <PrinterBar />

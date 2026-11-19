@@ -18,7 +18,7 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 
 1. Open the app and enter your household key.
 2. Turn on the D30.
-3. Tap **Connect printer**.
+3. Tap **Connect printer**. Other household devices can now print through this phone while the app is open.
 
 ## Repo layout
 
@@ -34,6 +34,16 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 - **Viewing** a box only needs its link. The link contains an unguessable 8-character ID, and that's what the QR code holds.
 - **Creating, listing, searching, editing and printing** need a shared household key. It is stored as the `HOUSEHOLD_KEY` Worker secret and sent as the `x-household-key` header.
 - To set up a device, open `/setup?key=<key>` once.
+
+## Printing from any device in the household
+
+Only one device needs the D30 connected. Any other device with the household key, including an iPhone (Safari has no Web Bluetooth), can print through it. The print button then says **Print label via _device name_**.
+
+- A device with the printer connected and the app open shares it. It heartbeats `POST /api/printers/heartbeat` every 2 s, which keeps its row in the `printer_connections` table fresh. The home screen shows that table as **Household printers**. While it's sharing, the host keeps its screen on, because a locked phone stops sharing.
+- Other devices queue a `print_jobs` row. The host picks the job up on its next heartbeat, claims it atomically, prints it and reports back. The requesting device polls until it's done.
+- A job nobody claims within 25 s fails with a clear error, so a phone that comes back later never prints stale labels. A host drops off the table 15 s after its last heartbeat, or right away when its printer disconnects or the app goes to the background.
+
+Code: `apps/worker/src/printing.ts` (API) and `apps/app/src/lib/household.ts` (host loop and `printAnywhere`).
 
 ## Develop
 

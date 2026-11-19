@@ -21,7 +21,8 @@ let chunkSize = 20;
 let lastJobAt = 0;
 
 export const usePrinter = store.useState;
-export const printerHelp: string | null = null;
+export const getPrinterState = store.get;
+export const subscribePrinter = store.subscribe;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -154,8 +155,13 @@ async function write(bytes: Uint8Array) {
   await device.writeCharacteristicWithResponseForService(SERVICE, WRITE_CHAR, toBase64(bytes));
 }
 
-export async function printLabel(input: LabelInput, rotation: Rotation = 'cw') {
-  if (!(await isConnected())) {
+/**
+ * Print on this device's printer. With `connect: false` (used when printing a job relayed from
+ * another household device) it never opens a picker or scans: it prints only if already connected.
+ */
+export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean } = {}) {
+  const { rotation = 'cw', connect = true } = opts;
+  if (connect && !(await isConnected())) {
     await tryReconnect();
     if (!(await isConnected())) await connectPrinter();
   }

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Text } from 'react-native';
 
 import { api, setHouseholdKey } from '@/lib/api';
+import { refreshHousehold } from '@/lib/household';
 import { Banner, Button, Field, Screen, styles } from '@/ui/components';
 
 export default function Setup() {
@@ -19,6 +20,7 @@ export default function Setup() {
     try {
       if (!(await api.checkKey(k))) throw new Error('That key was not accepted.');
       await setHouseholdKey(k);
+      refreshHousehold();
       router.replace('/');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));

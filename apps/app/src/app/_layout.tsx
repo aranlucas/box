@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { startHousehold } from '@/lib/household';
 import { colors } from '@/ui/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -10,6 +11,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
+    startHousehold(); // share this device's printer with the household / find theirs
   }, []);
   return (
     <>

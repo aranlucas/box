@@ -7,10 +7,8 @@ const store = createPrinterStore({ status: isWebBluetoothAvailable() ? 'disconne
 let conn: D30Connection | null = null;
 
 export const usePrinter = store.useState;
-
-export const printerHelp = isWebBluetoothAvailable()
-  ? null
-  : 'This browser cannot reach Bluetooth printers. Open this page in Chrome on Android or desktop.';
+export const getPrinterState = store.get;
+export const subscribePrinter = store.subscribe;
 
 /** Must be called from a tap/click (Web Bluetooth requires a user gesture to show the picker). */
 export async function connectPrinter(opts: { acceptAll?: boolean } = {}) {
@@ -46,8 +44,13 @@ export function disconnectPrinter() {
   store.set({ status: 'disconnected', name: undefined });
 }
 
-export async function printLabel(input: LabelInput, rotation: Rotation = 'cw') {
-  if (!conn?.connected()) {
+/**
+ * Print on this device's printer. With `connect: false` (used when printing a job relayed from
+ * another household device) it never opens a picker or scans: it prints only if already connected.
+ */
+export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean } = {}) {
+  const { rotation = 'cw', connect = true } = opts;
+  if (connect && !conn?.connected()) {
     await tryReconnect();
     if (!conn?.connected()) await connectPrinter();
   }

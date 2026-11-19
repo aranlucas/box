@@ -1,6 +1,8 @@
 import { env } from "cloudflare:workers";
-import { Hono, type Context, type Next } from "hono";
+import { Hono, type Context } from "hono";
 import { extractContents, TITLE_MAX, type Extraction } from "./ai.ts";
+import { requireKey } from "./auth.ts";
+import { printing } from "./printing.ts";
 
 type Box = {
   id: string;
@@ -32,12 +34,6 @@ const app = new Hono();
 app.get("/B/:id", (c) => c.redirect(`/b/${pid(c)}`, 301));
 
 const api = new Hono();
-
-async function requireKey(c: Context, next: Next) {
-  const key = c.req.header("x-household-key");
-  if (!key || key !== env.HOUSEHOLD_KEY) return c.json({ error: "Household key required" }, 401);
-  await next();
-}
 
 api.get("/auth/check", requireKey, (c) => c.json({ ok: true }));
 
@@ -243,6 +239,7 @@ app.options("/api/*", (c) =>
     "access-control-allow-headers": "content-type,x-household-key",
   }),
 );
+api.route("/", printing);
 app.route("/api", api);
 app.onError((err, c) => {
   console.error(err);
