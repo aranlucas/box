@@ -385,6 +385,50 @@ try {
     assert.ok(statuses.includes(429), `expected a 429, got ${statuses}`);
   });
 
+  await check("uploads must really be images (HTML/SVG disguised as image/jpeg rejected)", async () => {
+    for (const [body, type] of [["<html><script>alert(1)</script></html>", "image/jpeg"], ["<svg xmlns='http://www.w3.org/2000/svg'><script>1</script></svg>", "image/svg+xml"]]) {
+      const f = new FormData();
+      f.append("photo", new Blob([body], { type }), "x.jpg");
+      const r = await call("POST", `/api/boxes/${garageBox}/photos`, { token: A, form: f });
+      assert.equal(r.status, 415, `${type}: ${r.status}`);
+    }
+  });
+
+  await check("photos are served with a safe type, nosniff and a sandboxing CSP", async () => {
+    const box = (await call("GET", `/api/boxes/${garageBox}`)).data.box;
+    const res = await fetch(`${B}/api/photos/${box.photos[0].id}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type"), /^image\/(png|jpeg|webp|heic|heif|gif)$/);
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    assert.match(res.headers.get("content-security-policy") ?? "", /sandbox/);
+  });
+
+  await check("item list replacement is rejected if the box changed since the editor loaded it", async () => {
+    const before = (await call("GET", `/api/boxes/${garageBox}`, { token: A })).data.box;
+    await call("PATCH", `/api/boxes/${garageBox}`, { token: A, json: { room: "Garage" } }); // someone else edits
+    const stale = await call("PUT", `/api/boxes/${garageBox}/items`, { token: A, json: { items: [], if_updated_at: before.updated_at } });
+    assert.equal(stale.status, 409);
+    const fresh = (await call("GET", `/api/boxes/${garageBox}`, { token: A })).data.box;
+    const ok = await call("PUT", `/api/boxes/${garageBox}/items`, { token: A, json: { items: [{ name: "saw" }], if_updated_at: fresh.updated_at } });
+    assert.equal(ok.status, 200);
+  });
+
+  await check("two people racing for one invite: exactly one joins", async () => {
+    const r = await call("POST", `/api/houses/${garage}/invites`, { token: A });
+    const tok = r.data.url.split("/invite/")[1];
+    const [p, q] = [await login("racer1"), await login("racer2")];
+    const results = await Promise.all([p, q].map((t) => call("POST", `/api/invites/${tok}/accept`, { token: t })));
+    assert.deepEqual(results.map((x) => x.status).sort(), [200, 410]);
+    const members = (await call("GET", `/api/houses/${garage}/members`, { token: A })).data.members;
+    assert.equal(members.filter((m) => m.name === "racer1" || m.name === "racer2").length, 1);
+  });
+
+  await check("wrong household keys are throttled on every route that checks them", async () => {
+    const statuses = [];
+    for (let i = 0; i < 70; i++) statuses.push((await call("GET", "/api/auth/check", { key: `wrong${i}` })).status);
+    assert.ok(statuses.includes(429), `expected 429 among ${[...new Set(statuses)]}`);
+  });
+
   await check("native exchange rejects a bad code", async () => {
     const r = await call("POST", "/auth/native/exchange", { json: { code: "nope", verifier: "x" } });
     assert.equal(r.status, 400);

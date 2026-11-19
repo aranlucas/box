@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { Hono, type Context } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { userFromRequest, type User } from "./auth/session.ts";
 import { allow, randomToken, safeEqual, sha256Hex } from "./util.ts";
 
@@ -31,6 +32,9 @@ export async function roleIn(userId: string, houseId: string): Promise<Role | nu
 export async function actorFrom(c: Context): Promise<Actor> {
   const user = await userFromRequest(c);
   const key = c.req.header("x-household-key");
+  if (key && !(await allow(env.KEY_LIMIT, "key", c.req.header("cf-connecting-ip")))) {
+    throw new HTTPException(429, { message: "Too many attempts. Try again in a minute." });
+  }
   const legacy = !!key && !!env.HOUSEHOLD_KEY && (await safeEqual(key, env.HOUSEHOLD_KEY)) && (await homeUnclaimed());
   return { user, legacy };
 }
@@ -212,7 +216,8 @@ houseRoutes.post("/invites/:token/accept", async (c) => {
   const user = await userFromRequest(c);
   const denied = needUser(c, user);
   if (denied) return denied;
-  if (!(await allow(env.SENSITIVE_LIMIT, "accept", c.req.header("cf-connecting-ip")))) {
+  // Invite tokens are 192-bit random, so this is hygiene, not guessing protection.
+  if (!(await allow(env.LOGIN_LIMIT, "accept", c.req.header("cf-connecting-ip")))) {
     return c.json({ error: "Too many attempts. Try again in a minute." }, 429);
   }
   const inv = await loadInvite(c.req.param("token"));
@@ -222,18 +227,20 @@ houseRoutes.post("/invites/:token/accept", async (c) => {
   if (existing) return c.json({ house: { ...house, role: existing } });
   if (inv.status !== "valid") return c.json({ error: `This invite is ${inv.status}`, status: inv.status }, 410);
   const now = Date.now();
-  const claimed = await env.DB.prepare(
-    `UPDATE invites SET accepted_by = ?, accepted_at = ?
-     WHERE token_hash = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`,
-  )
-    .bind(user!.id, now, inv.hash, now)
-    .run();
+  // One transaction: consume the invite and add the member only if this request consumed it.
+  const [claimed] = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE invites SET accepted_by = ?1, accepted_at = ?2
+       WHERE token_hash = ?3 AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?2`,
+    ).bind(user!.id, now, inv.hash),
+    env.DB.prepare(
+      `INSERT OR IGNORE INTO members (house_id, user_id, role, created_at)
+       SELECT house_id, ?1, 'member', ?2 FROM invites WHERE token_hash = ?3 AND accepted_by = ?1 AND accepted_at = ?2`,
+    ).bind(user!.id, now, inv.hash),
+  ]);
   if (!claimed.meta.changes) {
     const again = await loadInvite(c.req.param("token"));
     return c.json({ error: "This invite is no longer valid", status: again?.status ?? "used" }, 410);
   }
-  await env.DB.prepare("INSERT OR IGNORE INTO members (house_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)")
-    .bind(house.id, user!.id, now)
-    .run();
   return c.json({ house: { ...house, role: "member" } });
 });

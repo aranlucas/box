@@ -41,7 +41,9 @@ export function safeReturnPath(p: string | undefined): string {
   if (!p || !p.startsWith("/") || /[\x00-\x20\x7f\\]/.test(p)) return "/";
   try {
     const u = new URL(p, ORIGIN);
-    return u.origin === ORIGIN ? u.pathname + u.search + u.hash : "/";
+    // Dot-segments can normalize "/a/..//evil.com" to "//evil.com" (protocol-relative): reject.
+    if (u.origin !== ORIGIN || u.pathname.startsWith("//")) return "/";
+    return u.pathname + u.search + u.hash;
   } catch {
     return "/";
   }

@@ -23,6 +23,8 @@ export default defineConfig({
       // Per-IP throttles: household-key claims / invite accepts, and sign-in starts.
       SENSITIVE_LIMIT: bindings.rateLimit({ namespace: "2001", simple: { limit: 5, period: 60 } }),
       LOGIN_LIMIT: bindings.rateLimit({ namespace: "2002", simple: { limit: 20, period: 60 } }),
+      // Any request presenting the legacy household key (caps key guessing on every route).
+      KEY_LIMIT: bindings.rateLimit({ namespace: "2003", simple: { limit: 60, period: 60 } }),
     },
   },
 });

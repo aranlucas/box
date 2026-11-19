@@ -57,6 +57,7 @@ export async function verifyIdToken(
     issuer: ISSUER,
     audience: p.clientId,
     algorithms: ["RS256"],
+    requiredClaims: ["exp", "iat", "sub"],
   });
   if (payload.nonce !== p.nonce) throw new Error("ID token nonce mismatch");
   if (!payload.sub) throw new Error("ID token has no subject");

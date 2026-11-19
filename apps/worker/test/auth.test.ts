@@ -11,6 +11,8 @@ describe("safeReturnPath", () => {
   test("defaults when missing", () => expect(safeReturnPath(undefined)).toBe("/"));
   test("rejects tab-smuggled protocol-relative URLs", () => expect(safeReturnPath("/\t/evil.com")).toBe("/"));
   test("rejects newline-smuggled protocol-relative URLs", () => expect(safeReturnPath("/\n/evil.com")).toBe("/"));
+  test("rejects paths that normalize to protocol-relative", () => expect(safeReturnPath("/a/..//evil.com")).toBe("/"));
+  test("rejects dot-segment tricks that normalize to //", () => expect(safeReturnPath("/./%2e/..//evil.com")).toBe("/"));
   test("keeps query and hash", () => expect(safeReturnPath("/invite/abc?x=1#y")).toBe("/invite/abc?x=1#y"));
 });
 
@@ -98,6 +100,18 @@ describe("verifyIdToken", () => {
   test("rejects a nonce mismatch", async () => {
     const t = await sign({ nonce: "other" });
     await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).rejects.toThrow(/nonce/);
+  });
+  test("rejects a token without exp", async () => {
+    const { publicKey, privateKey } = await generateKeyPair("RS256");
+    const jwk = { ...(await exportJWK(publicKey)), kid: "k2", alg: "RS256" };
+    const t = await new SignJWT({ nonce: "n1" })
+      .setProtectedHeader({ alg: "RS256", kid: "k2" })
+      .setIssuer(ISSUER)
+      .setAudience("cid")
+      .setSubject("u")
+      .setIssuedAt()
+      .sign(privateKey);
+    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks: createLocalJWKSet({ keys: [jwk] }) })).rejects.toThrow();
   });
   test("rejects an expired token", async () => {
     const t = await sign({ nonce: "n1" }, { exp: "-10m" });

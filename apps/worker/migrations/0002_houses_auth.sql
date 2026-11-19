@@ -65,7 +65,8 @@ INSERT INTO houses (id, name, created_at) VALUES ('HOME0000', 'Home', CAST(unixe
 -- tables are dropped children-first, so no ON DELETE CASCADE fires on existing rows.
 CREATE TABLE boxes_new (
   id TEXT PRIMARY KEY,
-  house_id TEXT NOT NULL REFERENCES houses(id) ON DELETE CASCADE,
+  -- DEFAULT keeps the pre-houses Worker's INSERT (no house_id) working between migrate and deploy.
+  house_id TEXT NOT NULL DEFAULT 'HOME0000' REFERENCES houses(id) ON DELETE CASCADE,
   number INTEGER NOT NULL,
   title TEXT NOT NULL,
   room TEXT,

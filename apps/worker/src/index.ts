@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import { Hono, type Context, type Next } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { extractContents, TITLE_MAX, type Extraction } from "./ai.ts";
 import { authRoutes } from "./auth/routes.ts";
 import { actorFrom, canAccessHouse, HOME_ID, houseRoutes } from "./houses.ts";
@@ -75,12 +76,28 @@ async function loadBox(id: string) {
   return { ...box, items: items.results as Item[], photos: photos.results as Photo[] };
 }
 
+const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+
+/** Identify an image by its magic bytes; the client-declared MIME type is never trusted. */
+function sniffImage(b: Uint8Array): string | null {
+  const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(0, 4) === "GIF8") return "image/gif";
+  if (ascii(4, 8) === "ftyp" && /^(heic|heix|hevc|hevx|mif1|msf1)$/.test(ascii(8, 12))) return "image/heic";
+  return null;
+}
+
 async function readPhoto(c: Context): Promise<{ bytes: Uint8Array; type: string } | Response> {
   const form = await c.req.formData().catch(() => null);
   const file = form?.get("photo");
   if (!file || typeof file === "string") return c.json({ error: "Missing photo" }, 400);
   if (file.size > 15 * 1024 * 1024) return c.json({ error: "Photo too large" }, 413);
-  return { bytes: new Uint8Array(await file.arrayBuffer()), type: file.type || "image/jpeg" };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const type = sniffImage(bytes);
+  if (!type) return c.json({ error: "That file is not a photo" }, 415);
+  return { bytes, type };
 }
 
 async function tryExtract(photo: { bytes: Uint8Array; type: string }, existingItems?: string[]) {
@@ -214,7 +231,17 @@ api.put("/boxes/:id/items", requireBoxAccess, async (c) => {
   const id = pid(c);
   const exists = await env.DB.prepare("SELECT id FROM boxes WHERE id = ?").bind(id).first();
   if (!exists) return c.json({ error: "Not found" }, 404);
-  const body = await c.req.json<{ items: { name: string; quantity?: number | null; source?: "ai" | "manual" }[] }>();
+  const body = await c.req.json<{
+    items: { name: string; quantity?: number | null; source?: "ai" | "manual" }[];
+    if_updated_at?: number;
+  }>();
+  // Optimistic concurrency: the editor says which version it started from.
+  if (body.if_updated_at !== undefined) {
+    const cur = await env.DB.prepare("SELECT updated_at FROM boxes WHERE id = ?").bind(id).first<{ updated_at: number }>();
+    if (cur && cur.updated_at !== body.if_updated_at) {
+      return c.json({ error: "This box was changed by someone else. Reload to see the latest list." }, 409);
+    }
+  }
   const items = (body.items ?? []).filter((i) => i.name?.trim());
   await env.DB.batch([
     env.DB.prepare("DELETE FROM items WHERE box_id = ?").bind(id),
@@ -251,9 +278,14 @@ api.get("/photos/:id", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   const obj = await env.PHOTOS.get(row.r2_key);
   if (!obj) return c.json({ error: "Not found" }, 404);
+  const stored = obj.httpMetadata?.contentType ?? "";
   return new Response(obj.body, {
     headers: {
-      "content-type": obj.httpMetadata?.contentType ?? "image/jpeg",
+      // Never serve anything that a browser could execute on this origin (older uploads included).
+      "content-type": SAFE_IMAGE_TYPES.has(stored) ? stored : "application/octet-stream",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+      "content-disposition": "inline",
       "cache-control": "public, max-age=31536000, immutable",
     },
   });
@@ -275,6 +307,7 @@ api.route("/", houseRoutes);
 app.route("/", authRoutes);
 app.route("/api", api);
 app.onError((err, c) => {
+  if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
   console.error(err);
   return c.json({ error: "Server error" }, 500);
 });

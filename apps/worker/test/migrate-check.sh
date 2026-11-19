@@ -20,6 +20,11 @@ other=$(q "SELECT COUNT(*) FROM boxes WHERE house_id IS NOT 'HOME0000'")
 [ "$other" = 0 ] || { echo "FAIL: $other boxes not in HOME0000"; exit 1; }
 fk=$(q "PRAGMA foreign_key_check")
 [ -z "$fk" ] || { echo "FAIL: foreign key violations: $fk"; exit 1; }
+# the pre-houses Worker (still live between migrate and deploy) inserts boxes without house_id
+q "INSERT INTO boxes (id, number, title, room, status, created_at, updated_at) VALUES ('OLD00001', (SELECT COALESCE(MAX(number), 0) + 1 FROM boxes), 'old worker', NULL, 'packed', 1, 1)" \
+  || { echo "FAIL: old Worker insert breaks after migration"; exit 1; }
+[ "$(q "SELECT house_id FROM boxes WHERE id='OLD00001'")" = HOME0000 ] || { echo "FAIL: old insert not in Home"; exit 1; }
+q "DELETE FROM boxes WHERE id='OLD00001'"
 # cascade still works through the renamed tables
 q "DELETE FROM boxes WHERE id='AAAA0002'"
 left=$(q "SELECT COUNT(*) FROM items WHERE box_id='AAAA0002'")
