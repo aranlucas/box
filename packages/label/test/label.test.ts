@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-  LABEL_H, LABEL_W, bitmapToAscii, bitmapToRGBA, buildJob, chunks, encodeD30, inkCoverage, renderLabel, titleLayout,
+  LABEL_H,
+  LABEL_W,
+  bitmapToAscii,
+  bitmapToRGBA,
+  buildJob,
+  chunks,
+  encodeD30,
+  inkCoverage,
+  renderLabel,
+  titleLayout,
   type Bitmap,
 } from '../src/index';
 
-const blank = (): Bitmap => ({ width: LABEL_W, height: LABEL_H, data: new Uint8Array(LABEL_W * LABEL_H) });
+const blank = (): Bitmap => ({
+  width: LABEL_W,
+  height: LABEL_H,
+  data: new Uint8Array(LABEL_W * LABEL_H),
+});
 const hex = (u: Uint8Array) => [...u].map((b) => b.toString(16).padStart(2, '0')).join(' ');
 
 describe('encodeD30', () => {
@@ -48,7 +61,8 @@ describe('chunks', () => {
     const odd = chunks(new Uint8Array(300), 128);
     expect(odd.map((p) => p.length)).toEqual([128, 128, 44]);
   });
-  it('rejects non-positive sizes', () => expect(() => chunks(new Uint8Array(4), 0)).toThrow());
+  it('rejects non-positive sizes', () =>
+    expect(() => chunks(new Uint8Array(4), 0)).toThrow('chunk size must be > 0'));
 });
 
 describe('titleLayout', () => {
@@ -65,7 +79,7 @@ describe('titleLayout', () => {
     const l = titleLayout('Bathroom towels sheets and assorted linens');
     expect(l.lines.length).toBe(2);
     expect(l.fits).toBe(false);
-    expect(l.lines[1].endsWith('…')).toBe(true);
+    expect(l.lines[1]).toMatch(/…$/);
     expect(l.lines.every((s) => s.length <= 12)).toBe(true);
   });
   it('normalizes accents and unknown chars', () => {
@@ -74,7 +88,11 @@ describe('titleLayout', () => {
 });
 
 describe('renderLabel', () => {
-  const input = { number: 14, title: 'Kitchen glassware', url: 'https://bx.example.workers.dev/b/K7Q2M9P4' };
+  const input = {
+    number: 14,
+    title: 'Kitchen glassware',
+    url: 'https://bx.example.workers.dev/b/K7Q2M9P4',
+  };
 
   it('renders a 320x96 label with QR + text and modest ink coverage', () => {
     const bmp = renderLabel(input);
@@ -104,13 +122,13 @@ describe('renderLabel', () => {
     expect(Math.min(top, left, bmp.height - bottom, LABEL_H - right)).toBeGreaterThanOrEqual(quiet);
     for (let y = top - quiet; y < bottom + quiet; y++) {
       const row = y * bmp.width;
-      const hasInk = (from: number, to: number) => bmp.data.subarray(row + from, row + to).includes(1);
-      if (y < top || y >= bottom) {
-        expect(hasInk(left - quiet, right + quiet)).toBe(false);
-      } else {
-        expect(hasInk(left - quiet, left)).toBe(false);
-        expect(hasInk(right, right + quiet)).toBe(false);
-      }
+      const hasInk = (from: number, to: number) =>
+        bmp.data.subarray(row + from, row + to).includes(1);
+      const inkInQuietZone =
+        y < top || y >= bottom
+          ? hasInk(left - quiet, right + quiet)
+          : hasInk(left - quiet, left) || hasInk(right, right + quiet);
+      expect(inkInQuietZone).toBe(false);
     }
     expect(cell).toBe(dotsPerModule);
     expect(right - left).toBe(dotsPerModule * modules);
@@ -118,7 +136,11 @@ describe('renderLabel', () => {
 
   it('keeps the label edges clear', () => {
     const bmp = renderLabel(input);
-    for (const y of [0, 1, 94, 95]) for (let x = 0; x < 320; x++) expect(bmp.data[y * 320 + x]).toBe(0);
+    for (const y of [0, 1, 94, 95]) {
+      for (let x = 0; x < 320; x++) {
+        expect(bmp.data[y * 320 + x]).toBe(0);
+      }
+    }
   });
 
   it('is deterministic', () => {

@@ -1,7 +1,7 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
-import { titleLayout } from "@mj/label";
-import { z } from "zod";
+import { createOpenAI } from '@ai-sdk/openai';
+import { generateText, Output } from 'ai';
+import { titleLayout } from '@mj/label';
+import { z } from 'zod';
 
 /** Max title length; set by the label's text budget (2 lines × ~14 chars, uppercase). */
 export const TITLE_MAX = 24;
@@ -15,15 +15,19 @@ const extractionSchema = z.object({
   room: z
     .string()
     .nullable()
-    .describe('The room these items most likely belong in at the new home, e.g. "Kitchen". null if unclear.'),
+    .describe(
+      'The room these items most likely belong in at the new home, e.g. "Kitchen". null if unclear.',
+    ),
   items: z
     .array(
       z.object({
-        name: z.string().describe('Concrete, searchable item name, e.g. "wine glasses", "HDMI cables".'),
-        quantity: z.number().int().nullable().describe("Count if clearly visible, otherwise null."),
+        name: z
+          .string()
+          .describe('Concrete, searchable item name, e.g. "wine glasses", "HDMI cables".'),
+        quantity: z.number().int().nullable().describe('Count if clearly visible, otherwise null.'),
       }),
     )
-    .describe("Every distinct item or group of items visible in the box."),
+    .describe('Every distinct item or group of items visible in the box.'),
 });
 
 export type Extraction = z.infer<typeof extractionSchema>;
@@ -44,8 +48,8 @@ export async function extractContents(opts: {
 }): Promise<Extraction> {
   const openai = createOpenAI({ apiKey: opts.apiKey });
   const existing = opts.existingItems?.length
-    ? `Items already recorded for this box: ${opts.existingItems.join(", ")}.`
-    : "This is the first photo of this box.";
+    ? `Items already recorded for this box: ${opts.existingItems.join(', ')}.`
+    : 'This is the first photo of this box.';
 
   const { output } = await generateText({
     model: openai(opts.model),
@@ -53,10 +57,10 @@ export async function extractContents(opts: {
     system: SYSTEM,
     messages: [
       {
-        role: "user",
+        role: 'user',
         content: [
-          { type: "text", text: `${existing} Describe what is in this box.` },
-          { type: "image", image: opts.image, mediaType: opts.mediaType },
+          { type: 'text', text: `${existing} Describe what is in this box.` },
+          { type: 'image', image: opts.image, mediaType: opts.mediaType },
         ],
       },
     ],
@@ -66,15 +70,19 @@ export async function extractContents(opts: {
   return {
     ...output,
     title: fitTitle(output.title),
-    items: output.items.filter((i) => i.name.trim()).map((i) => ({ ...i, name: i.name.trim() })),
+    items: output.items
+      .map(({ name, quantity }) => ({ name: name.trim(), quantity }))
+      .filter((item) => item.name),
   };
 }
 
 /** Make sure the title fits the printed label; drop leading words (adjectives) until it does. */
 export function fitTitle(raw: string): string {
-  let words = raw.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
-  while (words.length > 1 && !titleLayout(words.join(" ")).fits) words = words.slice(1);
-  const t = words.join(" ");
+  let words = raw.trim().split(/\s+/).filter(Boolean);
+  while (words.length > 1 && !titleLayout(words.join(' ')).fits) {
+    words = words.slice(1);
+  }
+  const t = words.join(' ');
   const fitted = titleLayout(t).fits ? t : t.slice(0, 12);
   return fitted.charAt(0).toUpperCase() + fitted.slice(1);
 }

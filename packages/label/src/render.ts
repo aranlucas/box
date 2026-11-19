@@ -6,11 +6,11 @@ import { normalizeText } from './font';
 export const LABEL_W = 320;
 export const LABEL_H = 96;
 
-export interface LabelInput {
+export type LabelInput = {
   number: number;
   title: string;
   url: string;
-}
+};
 
 const QR_AREA = LABEL_H; // square region on the left
 const QR_QUIET_MODULES = 4;
@@ -25,21 +25,27 @@ const MARGIN_Y = 2;
 
 const maxChars = (scale: number) => {
   let n = 0;
-  while (textWidth(n + 1, scale) <= TEXT_MAX_W) n++;
+  while (textWidth(n + 1, scale) <= TEXT_MAX_W) {
+    n++;
+  }
   return n;
 };
 
-export interface TitleLayout {
+export type TitleLayout = {
   lines: string[];
   fits: boolean;
   scale: number;
-}
+};
 
 /** How the title will be laid out on the label. `fits` is false when it had to be truncated. */
 export function titleLayout(title: string): TitleLayout {
   const t = normalizeText(title);
-  if (!t) return { lines: [], fits: true, scale: TITLE_SCALE };
-  if (t.length <= maxChars(BIG_TITLE_SCALE)) return { lines: [t], fits: true, scale: BIG_TITLE_SCALE };
+  if (!t) {
+    return { lines: [], fits: true, scale: TITLE_SCALE };
+  }
+  if (t.length <= maxChars(BIG_TITLE_SCALE)) {
+    return { lines: [t], fits: true, scale: BIG_TITLE_SCALE };
+  }
 
   const max = maxChars(TITLE_SCALE);
   const lines: string[] = [];
@@ -54,19 +60,28 @@ export function titleLayout(title: string): TitleLayout {
       lines.push(word.slice(0, max));
       word = word.slice(max);
     }
-    if (!word) continue;
-    if (!cur) cur = word;
-    else if (cur.length + 1 + word.length <= max) cur += ' ' + word;
-    else {
+    if (!word) {
+      continue;
+    }
+    if (!cur) {
+      cur = word;
+    } else if (cur.length + 1 + word.length <= max) {
+      cur += ` ${word}`;
+    } else {
       lines.push(cur);
       cur = word;
     }
   }
-  if (cur) lines.push(cur);
+  if (cur) {
+    lines.push(cur);
+  }
 
-  if (lines.length <= 2) return { lines, fits: true, scale: TITLE_SCALE };
-  const second = lines[1].length >= max ? lines[1].slice(0, max - 1) : lines[1];
-  return { lines: [lines[0], second + '…'], fits: false, scale: TITLE_SCALE };
+  const [first, second, ...overflow] = lines;
+  if (first === undefined || second === undefined || overflow.length === 0) {
+    return { lines, fits: true, scale: TITLE_SCALE };
+  }
+  // Leave room for the ellipsis that says there was more.
+  return { lines: [first, `${second.slice(0, max - 1)}…`], fits: false, scale: TITLE_SCALE };
 }
 
 const ALNUM = /^[0-9A-Z $%*+\-./:]*$/;
@@ -83,11 +98,15 @@ function makeQr(url: string) {
     q.make();
     const modulesWithQuietZone = q.getModuleCount() + 2 * QR_QUIET_MODULES;
     const cell = Math.floor(QR_AREA / modulesWithQuietZone);
-    if (cell < 1 || (best && cell < best.cell)) break;
+    if (cell < 1 || (best && cell < best.cell)) {
+      break;
+    }
     best = { q, cell };
   }
 
-  if (!best) throw new Error('The URL is too long to fit a QR code on the label.');
+  if (!best) {
+    throw new Error('The URL is too long to fit a QR code on the label.');
+  }
   return best;
 }
 
@@ -97,23 +116,34 @@ export function drawQr(b: Bitmap, url: string): void {
   const size = n * cell;
   const x0 = Math.floor((QR_AREA - size) / 2);
   const y0 = Math.floor((LABEL_H - size) / 2);
-  for (let r = 0; r < n; r++)
-    for (let c = 0; c < n; c++) if (q.isDark(r, c)) fillRect(b, x0 + c * cell, y0 + r * cell, cell, cell);
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      if (q.isDark(r, c)) {
+        fillRect(b, x0 + c * cell, y0 + r * cell, cell, cell);
+      }
+    }
+  }
 }
 
 export function renderLabel(input: LabelInput): Bitmap {
   const b = createBitmap(LABEL_W, LABEL_H);
-  if (input.url) drawQr(b, input.url);
+  if (input.url) {
+    drawQr(b, input.url);
+  }
 
   const num = `#${input.number}`;
   let numScale = NUMBER_SCALE;
-  while (numScale > 2 && textWidth(num.length, numScale) > TEXT_MAX_W) numScale--;
+  while (numScale > 2 && textWidth(num.length, numScale) > TEXT_MAX_W) {
+    numScale--;
+  }
 
   const layout = titleLayout(input.title);
-  const titleH = layout.lines.length
-    ? layout.lines.length * textHeight(layout.scale) + (layout.lines.length - 1) * LINE_GAP
-    : 0;
-  const blockH = textHeight(numScale) + (titleH ? BLOCK_GAP + titleH : 0);
+  const lineCount = layout.lines.length;
+  const titleH =
+    lineCount > 0
+      ? BLOCK_GAP + lineCount * textHeight(layout.scale) + (lineCount - 1) * LINE_GAP
+      : 0;
+  const blockH = textHeight(numScale) + titleH;
   let y = Math.max(MARGIN_Y, Math.round((LABEL_H - blockH) / 2));
 
   drawText(b, num, TEXT_X, y, numScale);

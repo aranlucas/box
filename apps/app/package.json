@@ -4,6 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "@expo/ui": "~58.0.29",
+    "@mj/api": "workspace:*",
     "@mj/label": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@tanstack/db": "1.0.0-rc.1.5",
@@ -44,8 +45,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.3.0",
-    "eslint": "^9.39.5",
-    "eslint-config-expo": "~58.0.4",
     "typescript": "~6.0.3",
     "vitest": "^5.1.1"
   },
@@ -54,10 +53,11 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint",
+    "lint": "pnpm -w exec oxlint --deny-warnings apps/app",
+    "check:expo": "expo install --check --pnpm && pnpm dlx expo-doctor@latest",
     "export:web": "expo export -p web",
     "typecheck": "tsc --noEmit",
-    "build:android": "EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev expo prebuild -p android --clean && cd android && EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev ./gradlew assembleRelease",
+    "build:android": "expo prebuild -p android --clean && cd android && ./gradlew assembleRelease",
     "test": "vitest run"
   },
   "private": true

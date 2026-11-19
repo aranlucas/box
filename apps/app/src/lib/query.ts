@@ -10,7 +10,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       // Don't hammer the API on 4xx (signed out, not found, forbidden); retry transient failures.
-      retry: (count, err) => !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
+      retry: (count, err) =>
+        !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
     },
     // Preserve immediate execution for local actions and user-initiated writes.
     mutations: { networkMode: 'always' },
@@ -31,11 +32,17 @@ if (Platform.OS !== 'web') {
     let disposed = false;
     const subscription = addNetworkStateListener(({ isConnected }) => {
       receivedEvent = true;
-      if (isConnected !== undefined) setOnline(isConnected);
+      if (isConnected !== undefined) {
+        setOnline(isConnected);
+      }
     });
-    void getNetworkStateAsync().then(({ isConnected }) => {
-      if (!disposed && !receivedEvent && isConnected !== undefined) setOnline(isConnected);
-    }).catch(() => {});
+    async function readInitialState() {
+      const state = await getNetworkStateAsync().catch(() => undefined);
+      if (!disposed && !receivedEvent && state?.isConnected !== undefined) {
+        setOnline(state.isConnected);
+      }
+    }
+    void readInitialState();
     return () => {
       disposed = true;
       subscription.remove();

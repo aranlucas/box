@@ -16,3 +16,5 @@ export const colors = {
 export const radius = { sm: 8, md: 12, lg: 18 };
 export const space = (n: number) => n * 4;
 export const MAX_WIDTH = 640;
+/** Smallest comfortable tap target (Android asks for 48dp, iOS for 44pt). */
+export const TAP = 44;

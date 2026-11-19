@@ -3,8 +3,26 @@
   "private": true,
   "packageManager": "pnpm@10.18.0",
   "scripts": {
+    "lint": "pnpm --filter worker types && oxlint --deny-warnings",
+    "lint:fix": "pnpm lint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "build:web": "pnpm --filter app export:web",
     "deploy": "pnpm build:web && pnpm --filter worker exec cf deploy --secrets-file .dev.vars"
+  },
+  "devDependencies": {
+    "eslint-import-resolver-typescript": "3.10.1",
+    "eslint-plugin-expo": "1.2.1",
+    "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-react": "7.37.5",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "oxfmt": "0.79.0",
+    "oxlint": "1.94.0",
+    "oxlint-config-universe": "0.2.0",
+    "oxlint-tsgolint": "7.0.2007",
+    "typescript": "~6.0.3"
   }
 }

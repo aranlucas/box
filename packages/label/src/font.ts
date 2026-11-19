@@ -2,7 +2,7 @@
 export const GLYPH_W = 5;
 export const GLYPH_H = 7;
 
-const RAW: Record<string, string> = {
+const RAW = {
   A: '.###. #...# #...# ##### #...# #...# #...#',
   B: '####. #...# #...# ####. #...# #...# ####.',
   C: '.###. #...# #.... #.... #.... #...# .###.',
@@ -56,23 +56,33 @@ const RAW: Record<string, string> = {
   '…': '..... ..... ..... ..... ..... ..... #.#.#',
 };
 
-/** Glyph rows as bitmasks; bit 4 = leftmost cell. */
-export const FONT: Record<string, number[]> = Object.fromEntries(
-  Object.entries(RAW).map(([ch, rows]) => [
-    ch,
-    rows.split(' ').map((r) => [...r].reduce((m, c) => (m << 1) | (c === '#' ? 1 : 0), 0)),
-  ]),
-);
+const UNKNOWN = '?';
+
+/** One row of cells ('#' = ink) as a bitmask; bit 4 = leftmost cell. */
+const rowBits = (row: string) =>
+  Array.from(row).reduce((bits, cell) => (bits << 1) | (cell === '#' ? 1 : 0), 0);
+const parse = (rows: string) => rows.split(' ').map(rowBits);
+
+const GLYPHS = new Map(Object.entries(RAW).map(([ch, rows]) => [ch, parse(rows)]));
+const UNKNOWN_GLYPH = parse(RAW['?']);
+
+/** Glyph rows as bitmasks, top to bottom. Characters outside the font draw as '?'. */
+export const glyph = (ch: string): number[] => GLYPHS.get(ch) ?? UNKNOWN_GLYPH;
+
+function normalizeChar(ch: string): string {
+  if (GLYPHS.has(ch)) {
+    return ch;
+  }
+  return ch === '_' ? '-' : UNKNOWN;
+}
 
 /** Uppercase, strip diacritics, map unsupported chars to '?'. */
 export function normalizeText(s: string): string {
-  let t = s.toUpperCase();
-  try {
-    t = t.normalize('NFD').replace(/[̀-ͯ]/g, '');
-  } catch {
-    // normalize unavailable (some JS engines) — keep as is
-  }
-  return [...t.replace(/\s+/g, ' ').trim()]
-    .map((c) => (FONT[c] ? c : c === '_' ? '-' : '?'))
-    .join('');
+  const stripped = s
+    .toUpperCase()
+    .normalize('NFD')
+    .replaceAll(/[\u0300-\u036F]/g, '')
+    .replaceAll(/\s+/g, ' ')
+    .trim();
+  return Array.from(stripped, normalizeChar).join('');
 }

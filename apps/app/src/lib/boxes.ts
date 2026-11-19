@@ -14,7 +14,7 @@ export function boxInventory(houseId: string, userId: string) {
       id,
       queryKey,
       queryClient: client.requireDependency<QueryClient>('queryClient'),
-      queryFn: ({ signal }) => api.listBoxes(houseId, undefined, signal),
+      queryFn: ({ signal }) => api.listBoxes(houseId, '', signal),
       getKey: (box) => box.id,
     }),
   );

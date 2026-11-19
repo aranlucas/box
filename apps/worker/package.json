@@ -8,11 +8,14 @@
     "deploy": "cf deploy",
     "migrate": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations",
     "migrate:local": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations --local",
-    "typecheck": "cf workers types && tsc",
-    "test": "vitest run"
+    "types": "cf workers types",
+    "typecheck": "pnpm types && tsc",
+    "test": "vitest run",
+    "test:api": "node test/api-check.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.0",
+    "@mj/api": "workspace:*",
     "@mj/label": "workspace:*",
     "ai": "^6.0.0",
     "hono": "^4.10.0",

@@ -50,10 +50,10 @@ Replace the single shared household key with real accounts.
 
 ## Approaches considered
 
-| | Approach | Trade-off |
-|-|-|-|
-| **A (chosen)** | Sign-in from Auth via OIDC; houses, members and invite links in the box app's D1; the box Worker keeps its own sessions. | No auth-repo changes; invite-by-link works without email. Houses exist only in this app. |
-| B | Houses are Better Auth organizations in Auth (the plugin is enabled but unused). | Shareable across apps, but needs house and invite UI, membership in tokens or an API, and invite delivery in the auth repo. |
+|                | Approach                                                                                                                 | Trade-off                                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| **A (chosen)** | Sign-in from Auth via OIDC; houses, members and invite links in the box app's D1; the box Worker keeps its own sessions. | No auth-repo changes; invite-by-link works without email. Houses exist only in this app.                                    |
+| B              | Houses are Better Auth organizations in Auth (the plugin is enabled but unused).                                         | Shareable across apps, but needs house and invite UI, membership in tokens or an API, and invite delivery in the auth repo. |
 
 ## Constraints (from the auth repo and its discovery document)
 
@@ -71,13 +71,13 @@ Replace the single shared household key with real accounts.
 
 Create one client on `/account/operator`:
 
-| Field | Value |
-|-|-|
-| Name | Moving Boxes |
-| Type | **web** (confidential, gets a client secret) |
-| Redirect URL | `https://bx.aranlucas.workers.dev/auth/callback` |
-| Scopes | `openid profile email` |
-| Second redirect URL (local dev) | `http://localhost:8788/auth/callback` |
+| Field                           | Value                                            |
+| ------------------------------- | ------------------------------------------------ |
+| Name                            | Moving Boxes                                     |
+| Type                            | **web** (confidential, gets a client secret)     |
+| Redirect URL                    | `https://bx.aranlucas.workers.dev/auth/callback` |
+| Scopes                          | `openid profile email`                           |
+| Second redirect URL (local dev) | `http://localhost:8788/auth/callback`            |
 
 The client ID and secret become Worker secrets: `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`.
 
@@ -115,7 +115,7 @@ The API accepts the cookie or the bearer token. The household key header is remo
   - It is **single-use** and **expires after 7 days**.
   - Owners can list and revoke pending invites.
 - **`/invite/<token>` (web page).**
-  - Shows "Join *House name*", plus who invited you.
+  - Shows "Join _House name_", plus who invited you.
   - If you're not signed in, it signs you in and comes back to this page.
   - **Accept** calls `POST /api/invites/<token>/accept`, which marks the invite used and adds you as a member.
   - Expired, used and revoked invites show a clear message.

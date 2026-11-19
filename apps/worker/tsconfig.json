@@ -6,11 +6,12 @@
     "moduleResolution": "bundler",
     "types": [],
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["src", "cloudflare.config.ts", ".cloudflare/types"]
+  "include": ["src", "test", "cloudflare.config.ts", ".cloudflare/types"]
 }

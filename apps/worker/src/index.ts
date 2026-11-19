@@ -1,306 +1,364 @@
-import { env } from "cloudflare:workers";
-import { Hono, type Context, type Next } from "hono";
-import { HTTPException } from "hono/http-exception";
-import { extractContents, TITLE_MAX, type Extraction } from "./ai.ts";
-import { authRoutes } from "./auth/routes.ts";
-import { actorFrom, canAccessHouse, HOME_ID, houseRoutes } from "./houses.ts";
-import { printingRoutes } from "./printing.ts";
-import { searchBoxes } from "./search.ts";
-
-type Box = {
-  id: string;
-  house_id: string;
-  number: number;
-  title: string;
-  room: string | null;
-  notes: string | null;
-  status: "packed" | "unpacked";
-  created_at: number;
-  updated_at: number;
-};
-type Item = { id: string; name: string; quantity: number | null; source: "ai" | "manual"; position: number };
-type Photo = { id: string; created_at: number };
+import type { Box, BoxRow, BoxStatus, Item, Photo } from '@mj/api';
+import { env } from 'cloudflare:workers';
+import { Hono, type Context } from 'hono';
+import { createMiddleware } from 'hono/factory';
+import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
+import { extractContents, TITLE_MAX, type Extraction } from './ai.ts';
+import { authRoutes } from './auth/routes.ts';
+import {
+  actorFrom,
+  canAccessHouse,
+  enterHouse,
+  houseRoutes,
+  requireHouse,
+  type HouseEnv,
+} from './houses.ts';
+import { printingRoutes } from './printing.ts';
+import { searchBoxes } from './search.ts';
+import { body } from './util.ts';
 
 // Crockford base32 (no I, L, O, U): uppercase-only so it survives QR alphanumeric mode.
-const ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 function randomId(len: number): string {
   const bytes = crypto.getRandomValues(new Uint8Array(len));
-  return Array.from(bytes, (b) => ALPHABET[b & 31]).join("");
+  return Array.from(bytes, (b) => ALPHABET.charAt(b & 31)).join('');
 }
-const boxId = () => randomId(8); // 40 bits
-const rowId = () => randomId(16);
+const newBoxId = () => randomId(8); // 40 bits
+const newRowId = () => randomId(16);
 
-const pid = (c: Context) => (c.req.param("id") ?? "").toUpperCase();
+/** The `:id` path parameter. QR codes carry ids uppercased, links may not. */
+const pid = (c: Context) => (c.req.param('id') ?? '').toUpperCase();
 
 const app = new Hono();
 
 // QR codes encode the URL uppercased (denser QR). Normalise /B/XXXX → /b/XXXX for the SPA router.
-app.get("/B/:id", (c) => c.redirect(`/b/${pid(c)}`, 301));
+app.get('/B/:id', (c) => c.redirect(`/b/${pid(c)}`, 301));
 
-type Env = { Variables: { houseId: string } };
-const api = new Hono<Env>();
-
-/** List/create: the caller must belong to the house named by x-house-id (legacy key → Home). */
-async function requireHouse(c: Context<Env>, next: Next) {
-  const actor = await actorFrom(c);
-  if (!actor.user && !actor.legacy) return c.json({ error: "Sign in required" }, 401);
-  const houseId = c.req.header("x-house-id") || (actor.legacy ? HOME_ID : "");
-  if (!houseId) return c.json({ error: "Choose a house" }, 400);
-  if (!(await canAccessHouse(actor, houseId))) return c.json({ error: "Not a member of this house" }, 403);
-  c.set("houseId", houseId);
-  await next();
-}
+const api = new Hono<HouseEnv>();
 
 /** Box-by-id: the caller must belong to the box's own house. */
-async function requireBoxAccess(c: Context<Env>, next: Next) {
-  const box = await env.DB.prepare("SELECT house_id FROM boxes WHERE id = ?").bind(pid(c)).first<{ house_id: string }>();
-  if (!box) return c.json({ error: "Not found" }, 404);
-  const actor = await actorFrom(c);
-  if (!actor.user && !actor.legacy) return c.json({ error: "Sign in required" }, 401);
-  if (!(await canAccessHouse(actor, box.house_id))) return c.json({ error: "Not a member of this house" }, 403);
-  c.set("houseId", box.house_id);
-  await next();
-}
+const requireBoxAccess = createMiddleware<HouseEnv>(async (c, next) => {
+  const houseId = await env.DB.prepare('SELECT house_id FROM boxes WHERE id = ?')
+    .bind(pid(c))
+    .first<string>('house_id');
+  if (!houseId) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+  return (await enterHouse(c, houseId)) ?? next();
+});
 
 // Legacy (v1.0.0 setup screen): true while the household key is still accepted.
-api.get("/auth/check", async (c) => ((await actorFrom(c)).legacy ? c.json({ ok: true }) : c.json({ error: "Invalid key" }, 401)));
+api.get('/auth/check', async (c) =>
+  (await actorFrom(c)).legacy ? c.json({ ok: true }) : c.json({ error: 'Invalid key' }, 401),
+);
 
-// Responses from routes that already passed requireHouse/requireBoxAccess are editable by the caller.
-const editable = <T extends object>(box: T | null) => (box ? { ...box, can_edit: true } : box);
-
-async function loadBox(id: string) {
-  const box = await env.DB.prepare("SELECT * FROM boxes WHERE id = ?").bind(id.toUpperCase()).first<Box>();
-  if (!box) return null;
-  const [items, photos] = await env.DB.batch([
-    env.DB.prepare("SELECT id, name, quantity, source, position FROM items WHERE box_id = ? ORDER BY position").bind(box.id),
-    env.DB.prepare("SELECT id, created_at FROM photos WHERE box_id = ? ORDER BY created_at").bind(box.id),
+async function loadBox(id: string): Promise<Omit<Box, 'can_edit'> | null> {
+  const [box, items, photos] = await Promise.all([
+    env.DB.prepare('SELECT * FROM boxes WHERE id = ?').bind(id).first<BoxRow>(),
+    env.DB.prepare(
+      'SELECT id, name, quantity, source FROM items WHERE box_id = ? ORDER BY position',
+    )
+      .bind(id)
+      .all<Item>(),
+    env.DB.prepare('SELECT id, created_at FROM photos WHERE box_id = ? ORDER BY created_at')
+      .bind(id)
+      .all<Photo>(),
   ]);
-  return { ...box, items: items.results as Item[], photos: photos.results as Photo[] };
+  return box && { ...box, items: items.results, photos: photos.results };
 }
 
-const SAFE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+/** The box as returned to a caller that already passed requireHouse/requireBoxAccess, so may edit it. */
+async function editableBox(id: string): Promise<Box> {
+  const box = await loadBox(id);
+  if (!box) {
+    throw new HTTPException(404, { message: 'Not found' });
+  }
+  return { ...box, can_edit: true };
+}
+
+const SAFE_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+]);
+const HEIC_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1']);
 
 /** Identify an image by its magic bytes; the client-declared MIME type is never trusted. */
-function sniffImage(b: Uint8Array): string | null {
+function sniffImage(b: Uint8Array): string | undefined {
   const ascii = (from: number, to: number) => String.fromCharCode(...b.subarray(from, to));
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b[0] === 0x89 && ascii(1, 4) === "PNG") return "image/png";
-  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
-  if (ascii(0, 4) === "GIF8") return "image/gif";
-  if (ascii(4, 8) === "ftyp" && /^(heic|heix|hevc|hevx|mif1|msf1)$/.test(ascii(8, 12))) return "image/heic";
-  return null;
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (b[0] === 0x89 && ascii(1, 4) === 'PNG') {
+    return 'image/png';
+  }
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  if (ascii(0, 4) === 'GIF8') {
+    return 'image/gif';
+  }
+  if (ascii(4, 8) === 'ftyp' && HEIC_BRANDS.has(ascii(8, 12))) {
+    return 'image/heic';
+  }
+  return undefined;
 }
 
-async function readPhoto(c: Context): Promise<{ bytes: Uint8Array; type: string } | Response> {
-  const form = await c.req.formData().catch(() => null);
-  const file = form?.get("photo");
-  if (!file || typeof file === "string") return c.json({ error: "Missing photo" }, 400);
-  if (file.size > 15 * 1024 * 1024) return c.json({ error: "Photo too large" }, 413);
+type Upload = { bytes: Uint8Array; type: string };
+
+async function readPhoto(c: Context): Promise<Upload> {
+  const form = await c.req.formData().catch(() => undefined);
+  const file = form?.get('photo');
+  if (!(file instanceof File)) {
+    throw new HTTPException(400, { message: 'Missing photo' });
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    throw new HTTPException(413, { message: 'Photo too large' });
+  }
   const bytes = new Uint8Array(await file.arrayBuffer());
   const type = sniffImage(bytes);
-  if (!type) return c.json({ error: "That file is not a photo" }, 415);
+  if (!type) {
+    throw new HTTPException(415, { message: 'That file is not a photo' });
+  }
   return { bytes, type };
 }
 
-async function tryExtract(photo: { bytes: Uint8Array; type: string }, existingItems?: string[]) {
-  try {
-    return await extractContents({
-      apiKey: env.OPENAI_API_KEY,
-      model: env.OPENAI_MODEL,
-      image: photo.bytes,
-      mediaType: photo.type,
-      existingItems,
-    });
-  } catch (err) {
-    console.error("AI extraction failed", err);
-    return null;
-  }
+/** Stores the photo and asks the AI what is in it, at the same time. A failed extraction is not fatal. */
+async function storeAndExtract(
+  r2Key: string,
+  photo: Upload,
+  existingItems?: string[],
+): Promise<Extraction | undefined> {
+  const extraction = extractContents({
+    apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_MODEL,
+    image: photo.bytes,
+    mediaType: photo.type,
+    existingItems,
+  }).catch((error: unknown) => {
+    console.error('AI extraction failed', error);
+    return undefined;
+  });
+  await env.PHOTOS.put(r2Key, photo.bytes, { httpMetadata: { contentType: photo.type } });
+  return extraction;
 }
 
-function itemInserts(id: string, items: Extraction["items"], startPos: number, source: "ai" | "manual") {
-  return items.map((it, i) =>
-    env.DB.prepare("INSERT INTO items (id, box_id, name, quantity, source, position) VALUES (?, ?, ?, ?, ?, ?)").bind(
-      rowId(),
-      id,
+const insertItem =
+  'INSERT INTO items (id, box_id, name, quantity, source, position) VALUES (?, ?, ?, ?, ?, ?)';
+const insertPhoto = 'INSERT INTO photos (id, box_id, r2_key, created_at) VALUES (?, ?, ?, ?)';
+
+type NewItem = { name: string; quantity: number | null; source?: Item['source'] };
+const itemInserts = (boxId: string, items: NewItem[], startPos: number) =>
+  items.map((it, i) =>
+    env.DB.prepare(insertItem).bind(
+      newRowId(),
+      boxId,
       it.name,
-      it.quantity ?? null,
-      source,
+      it.quantity,
+      it.source ?? 'ai',
       startPos + i,
     ),
   );
-}
 
 // Create a box from a photo.
-api.post("/boxes", requireHouse, async (c) => {
-  const houseId = c.get("houseId");
+api.post('/boxes', requireHouse, async (c) => {
   const photo = await readPhoto(c);
-  if (photo instanceof Response) return photo;
-
-  const id = boxId();
-  const photoId = rowId();
-  const now = Date.now();
+  const id = newBoxId();
+  const photoId = newRowId();
   const r2Key = `photos/${id}/${photoId}`;
-
-  const [, extraction] = await Promise.all([
-    env.PHOTOS.put(r2Key, photo.bytes, { httpMetadata: { contentType: photo.type } }),
-    tryExtract(photo),
-  ]);
+  const extraction = await storeAndExtract(r2Key, photo);
+  const now = Date.now();
 
   await env.DB.batch([
+    // An unreadable photo still makes a box: it is titled after the number it was just given.
     env.DB.prepare(
       `INSERT INTO boxes (id, house_id, number, title, room, status, created_at, updated_at)
-       VALUES (?1, ?2, (SELECT COALESCE(MAX(number), 0) + 1 FROM boxes WHERE house_id = ?2), ?3, ?4, 'packed', ?5, ?5)`,
-    ).bind(id, houseId, extraction?.title || "", extraction?.room ?? null, now),
-    env.DB.prepare("INSERT INTO photos (id, box_id, r2_key, created_at) VALUES (?, ?, ?, ?)").bind(photoId, id, r2Key, now),
-    ...itemInserts(id, extraction?.items ?? [], 0, "ai"),
+       SELECT ?1, ?2, n, COALESCE(?3, 'Box ' || n), ?4, 'packed', ?5, ?5
+       FROM (SELECT COALESCE(MAX(number), 0) + 1 AS n FROM boxes WHERE house_id = ?2)`,
+    ).bind(id, c.var.houseId, extraction?.title || null, extraction?.room ?? null, now),
+    env.DB.prepare(insertPhoto).bind(photoId, id, r2Key, now),
+    ...itemInserts(id, extraction?.items ?? [], 0),
   ]);
-
-  const box = await loadBox(id);
-  if (box && !box.title) {
-    box.title = `Box ${box.number}`;
-    await env.DB.prepare("UPDATE boxes SET title = ? WHERE id = ?").bind(box.title, id).run();
-  }
-  return c.json({ box: editable(box), aiFailed: extraction === null }, 201);
+  return c.json({ box: await editableBox(id), aiFailed: !extraction }, 201);
 });
 
 // Add another photo; AI appends items it hasn't seen yet.
-api.post("/boxes/:id/photos", requireBoxAccess, async (c) => {
-  const box = await loadBox(pid(c));
-  if (!box) return c.json({ error: "Not found" }, 404);
-  const photo = await readPhoto(c);
-  if (photo instanceof Response) return photo;
-
-  const photoId = rowId();
-  const r2Key = `photos/${box.id}/${photoId}`;
-  const [, extraction] = await Promise.all([
-    env.PHOTOS.put(r2Key, photo.bytes, { httpMetadata: { contentType: photo.type } }),
-    tryExtract(photo, box.items.map((i) => i.name)),
+api.post('/boxes/:id/photos', requireBoxAccess, async (c) => {
+  const id = pid(c);
+  const [photo, { results: existing }] = await Promise.all([
+    readPhoto(c),
+    env.DB.prepare('SELECT name FROM items WHERE box_id = ? ORDER BY position')
+      .bind(id)
+      .all<{ name: string }>(),
   ]);
+  const photoId = newRowId();
+  const r2Key = `photos/${id}/${photoId}`;
+  const extraction = await storeAndExtract(
+    r2Key,
+    photo,
+    existing.map((item) => item.name),
+  );
   const now = Date.now();
   await env.DB.batch([
-    env.DB.prepare("INSERT INTO photos (id, box_id, r2_key, created_at) VALUES (?, ?, ?, ?)").bind(photoId, box.id, r2Key, now),
-    env.DB.prepare("UPDATE boxes SET updated_at = ? WHERE id = ?").bind(now, box.id),
-    ...itemInserts(box.id, extraction?.items ?? [], box.items.length, "ai"),
+    env.DB.prepare(insertPhoto).bind(photoId, id, r2Key, now),
+    env.DB.prepare('UPDATE boxes SET updated_at = ? WHERE id = ?').bind(now, id),
+    ...itemInserts(id, extraction?.items ?? [], existing.length),
   ]);
-  return c.json({ box: editable(await loadBox(box.id)), aiFailed: extraction === null });
+  return c.json({ box: await editableBox(id), aiFailed: !extraction });
 });
 
 // List / search.
-api.get("/boxes", requireHouse, async (c) => {
-  const boxes = await searchBoxes(env.DB, env.OPENAI_API_KEY, c.get("houseId"), c.req.query("q")?.trim() ?? "");
+api.get('/boxes', requireHouse, async (c) => {
+  const boxes = await searchBoxes(
+    env.DB,
+    env.OPENAI_API_KEY,
+    c.var.houseId,
+    c.req.query('q')?.trim() ?? '',
+  );
   return c.json({ boxes });
 });
 
 // Public: anyone with the (unguessable) link can view a box.
-api.get("/boxes/:id", async (c) => {
-  const box = await loadBox(pid(c));
-  if (!box) return c.json({ error: "Not found" }, 404);
-  const can_edit = await canAccessHouse(await actorFrom(c), box.house_id);
-  return c.json({ box: { ...box, can_edit } });
-});
-
-api.patch("/boxes/:id", requireBoxAccess, async (c) => {
-  const id = pid(c);
-  const body = await c.req.json<Partial<Pick<Box, "title" | "room" | "notes" | "status">>>();
-  const sets: string[] = [];
-  const vals: unknown[] = [];
-  if (typeof body.title === "string") (sets.push("title = ?"), vals.push(body.title.trim().slice(0, TITLE_MAX * 2)));
-  if (body.room !== undefined) (sets.push("room = ?"), vals.push(body.room?.trim() || null));
-  if (body.notes !== undefined) (sets.push("notes = ?"), vals.push(body.notes?.trim() || null));
-  if (body.status === "packed" || body.status === "unpacked") (sets.push("status = ?"), vals.push(body.status));
-  if (!sets.length) return c.json({ error: "Nothing to update" }, 400);
-  sets.push("updated_at = ?");
-  vals.push(Date.now());
-  const res = await env.DB.prepare(`UPDATE boxes SET ${sets.join(", ")} WHERE id = ?`).bind(...vals, id).run();
-  if (!res.meta.changes) return c.json({ error: "Not found" }, 404);
-  return c.json({ box: editable(await loadBox(id)) });
-});
-
-// Replace the item list (simple; edits come from one household).
-api.put("/boxes/:id/items", requireBoxAccess, async (c) => {
-  const id = pid(c);
-  const exists = await env.DB.prepare("SELECT id FROM boxes WHERE id = ?").bind(id).first();
-  if (!exists) return c.json({ error: "Not found" }, 404);
-  const body = await c.req.json<{
-    items: { name: string; quantity?: number | null; source?: "ai" | "manual" }[];
-    if_updated_at?: number;
-  }>();
-  // Optimistic concurrency: the editor says which version it started from.
-  if (body.if_updated_at !== undefined) {
-    const cur = await env.DB.prepare("SELECT updated_at FROM boxes WHERE id = ?").bind(id).first<{ updated_at: number }>();
-    if (cur && cur.updated_at !== body.if_updated_at) {
-      return c.json({ error: "This box was changed by someone else. Reload to see the latest list." }, 409);
-    }
+api.get('/boxes/:id', async (c) => {
+  const [box, actor] = await Promise.all([loadBox(pid(c)), actorFrom(c)]);
+  if (!box) {
+    return c.json({ error: 'Not found' }, 404);
   }
-  const items = (body.items ?? []).filter((i) => i.name?.trim());
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM items WHERE box_id = ?").bind(id),
-    ...items.map((it, i) =>
-      env.DB.prepare("INSERT INTO items (id, box_id, name, quantity, source, position) VALUES (?, ?, ?, ?, ?, ?)").bind(
-        rowId(),
-        id,
-        it.name.trim(),
-        Number.isInteger(it.quantity) ? it.quantity : null,
-        it.source === "ai" ? "ai" : "manual",
-        i,
-      ),
-    ),
-    env.DB.prepare("UPDATE boxes SET updated_at = ? WHERE id = ?").bind(Date.now(), id),
-  ]);
-  return c.json({ box: editable(await loadBox(id)) });
+  return c.json<{ box: Box }>({
+    box: { ...box, can_edit: await canAccessHouse(actor, box.house_id) },
+  });
 });
 
-api.delete("/boxes/:id", requireBoxAccess, async (c) => {
+const blankAsNull = (text: string | null) => text?.trim() || null;
+const boxPatch = z
+  .object({
+    title: z.string().transform((title) => title.trim().slice(0, TITLE_MAX * 2)),
+    room: z.string().nullable().transform(blankAsNull),
+    notes: z.string().nullable().transform(blankAsNull),
+    status: z.enum(['packed', 'unpacked'] satisfies BoxStatus[]),
+  })
+  .partial();
+
+api.patch('/boxes/:id', requireBoxAccess, async (c) => {
   const id = pid(c);
-  const { results } = await env.DB.prepare("SELECT r2_key FROM photos WHERE box_id = ?").bind(id).all<{ r2_key: string }>();
-  if (results.length) await env.PHOTOS.delete(results.map((r) => r.r2_key));
+  // Column names come from the schema's own keys, never from the request.
+  const changes = Object.entries(await body(c, boxPatch));
+  if (changes.length === 0) {
+    return c.json({ error: 'Nothing to update' }, 400);
+  }
+  const sets = [...changes.map(([column]) => `${column} = ?`), 'updated_at = ?'];
+  const values = [...changes.map(([, value]) => value), Date.now()];
+  await env.DB.prepare(`UPDATE boxes SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...values, id)
+    .run();
+  return c.json({ box: await editableBox(id) });
+});
+
+const itemList = z.object({
+  items: z.array(
+    z.object({
+      name: z.string().trim(),
+      quantity: z.int().nullable().default(null),
+      source: z.enum(['ai', 'manual']).default('manual'),
+    }),
+  ),
+  /** The box version the editor started from. */
+  if_updated_at: z.number().optional(),
+});
+
+// Replace the item list.
+api.put('/boxes/:id/items', requireBoxAccess, async (c) => {
+  const id = pid(c);
+  const { items, if_updated_at: expected } = await body(c, itemList);
+  // Optimistic concurrency: bumping the version is also the check that nobody else changed the box,
+  // so two editors saving at once cannot both win.
+  const claimed = await env.DB.prepare(
+    'UPDATE boxes SET updated_at = ?1 WHERE id = ?2 AND (?3 IS NULL OR updated_at = ?3)',
+  )
+    .bind(Date.now(), id, expected ?? null)
+    .run();
+  if (!claimed.meta.changes) {
+    return c.json(
+      { error: 'This box was changed by someone else. Reload to see the latest list.' },
+      409,
+    );
+  }
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM items WHERE box_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM photos WHERE box_id = ?").bind(id),
-    env.DB.prepare("DELETE FROM boxes WHERE id = ?").bind(id),
+    env.DB.prepare('DELETE FROM items WHERE box_id = ?').bind(id),
+    ...itemInserts(
+      id,
+      items.filter((item) => item.name),
+      0,
+    ),
+  ]);
+  return c.json({ box: await editableBox(id) });
+});
+
+api.delete('/boxes/:id', requireBoxAccess, async (c) => {
+  const id = pid(c);
+  const { results } = await env.DB.prepare('SELECT r2_key FROM photos WHERE box_id = ?')
+    .bind(id)
+    .all<{ r2_key: string }>();
+  if (results.length > 0) {
+    await env.PHOTOS.delete(results.map((r) => r.r2_key));
+  }
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM items WHERE box_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM photos WHERE box_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM boxes WHERE id = ?').bind(id),
   ]);
   return c.json({ ok: true });
 });
 
 // Public: photo IDs are random, only discoverable via a box link.
-api.get("/photos/:id", async (c) => {
-  const row = await env.DB.prepare("SELECT r2_key FROM photos WHERE id = ?").bind(pid(c)).first<{ r2_key: string }>();
-  if (!row) return c.json({ error: "Not found" }, 404);
-  const obj = await env.PHOTOS.get(row.r2_key);
-  if (!obj) return c.json({ error: "Not found" }, 404);
-  const stored = obj.httpMetadata?.contentType ?? "";
+api.get('/photos/:id', async (c) => {
+  const r2Key = await env.DB.prepare('SELECT r2_key FROM photos WHERE id = ?')
+    .bind(pid(c))
+    .first<string>('r2_key');
+  const obj = r2Key ? await env.PHOTOS.get(r2Key) : null;
+  if (!obj) {
+    return c.json({ error: 'Not found' }, 404);
+  }
+  const stored = obj.httpMetadata?.contentType ?? '';
   return new Response(obj.body, {
     headers: {
       // Never serve anything that a browser could execute on this origin (older uploads included).
-      "content-type": SAFE_IMAGE_TYPES.has(stored) ? stored : "application/octet-stream",
-      "x-content-type-options": "nosniff",
-      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
-      "content-disposition": "inline",
-      "cache-control": "public, max-age=31536000, immutable",
+      'content-type': SAFE_IMAGE_TYPES.has(stored) ? stored : 'application/octet-stream',
+      'x-content-type-options': 'nosniff',
+      'content-security-policy':
+        "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+      'content-disposition': 'inline',
+      'cache-control': 'public, max-age=31536000, immutable',
     },
   });
 });
 
-app.use("/api/*", async (c, next) => {
+app.use('/api/*', async (c, next) => {
   // Native app calls the API cross-origin in dev; allow it.
   await next();
-  c.res.headers.set("access-control-allow-origin", "*");
+  c.res.headers.set('access-control-allow-origin', '*');
 });
-app.options("/api/*", (c) =>
+app.options('/api/*', (c) =>
   c.body(null, 204, {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-    "access-control-allow-headers": "content-type,x-household-key,x-house-id,authorization",
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-household-key,x-house-id,authorization',
   }),
 );
-api.route("/", houseRoutes);
-api.route("/", printingRoutes(requireHouse));
-app.route("/", authRoutes);
-app.route("/api", api);
-app.onError((err, c) => {
-  if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
-  console.error(err);
-  return c.json({ error: "Server error" }, 500);
+api.route('/', houseRoutes);
+api.route('/', printingRoutes);
+app.route('/', authRoutes);
+app.route('/api', api);
+app.onError((error, c) => {
+  if (error instanceof HTTPException) {
+    return c.json({ error: error.message }, error.status);
+  }
+  console.error(error);
+  return c.json({ error: 'Server error' }, 500);
 });
 
 export default app satisfies ExportedHandler;

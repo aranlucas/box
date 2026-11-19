@@ -1,5 +1,18 @@
+import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import type { z } from 'zod';
+
+/** Where this Worker is deployed; printed into invite links and the OIDC redirect URI. */
+export const PUBLIC_ORIGIN = 'https://bx.aranlucas.workers.dev';
+
 const b64url = (bytes: Uint8Array) =>
-  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  btoa(String.fromCharCode(...bytes))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '');
+
+const sha256 = async (s: string) =>
+  new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
 
 /** Random URL-safe token. */
 export function randomToken(bytes = 32): string {
@@ -7,29 +20,45 @@ export function randomToken(bytes = 32): string {
 }
 
 export async function sha256Hex(s: string): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)));
-  return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(await sha256(s), (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** PKCE S256 code challenge for a verifier. */
 export async function s256(verifier: string): Promise<string> {
-  return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
+  return b64url(await sha256(verifier));
 }
-
-const ORIGIN = "https://bx.aranlucas.workers.dev";
 
 /** Constant-time string comparison (compares SHA-256 digests so lengths don't leak). */
 export async function safeEqual(a: string, b: string): Promise<boolean> {
   const [x, y] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
   let diff = 0;
-  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  for (let i = 0; i < x.length; i++) {
+    diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  }
   return diff === 0;
 }
 
 /** Per-IP rate limit; true when the request may proceed. */
-export async function allow(limiter: RateLimit, scope: string, ip: string | undefined): Promise<boolean> {
-  const { success } = await limiter.limit({ key: `${scope}:${ip ?? "unknown"}` });
+export async function allow(limiter: RateLimit, scope: string, c: Context): Promise<boolean> {
+  const { success } = await limiter.limit({
+    key: `${scope}:${c.req.header('cf-connecting-ip') ?? 'unknown'}`,
+  });
   return success;
+}
+
+export const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * The request's JSON body, checked against `schema`. Request bodies are the one place the types
+ * can't be trusted, so every route parses here and works with the result as typed.
+ */
+export async function body<T>(c: Context, schema: z.ZodType<T>): Promise<T> {
+  const parsed = schema.safeParse(await c.req.json().catch(() => undefined));
+  if (parsed.success) {
+    return parsed.data;
+  }
+  throw new HTTPException(400, { message: parsed.error.issues[0]?.message ?? 'Invalid request' });
 }
 
 /**
@@ -37,14 +66,19 @@ export async function allow(limiter: RateLimit, scope: string, ip: string | unde
  * (browsers strip tabs/newlines, so "/\t/evil.com" would become "//evil.com"), then the path is
  * resolved against our origin and must stay on it.
  */
-export function safeReturnPath(p: string | undefined): string {
-  if (!p || !p.startsWith("/") || /[\x00-\x20\x7f\\]/.test(p)) return "/";
+export function safeReturnPath(p: string | null | undefined): string {
+  // oxlint-disable-next-line no-control-regex -- rejecting control characters is the point
+  if (!p?.startsWith('/') || /[\u0000-\u0020\u007F\\]/.test(p)) {
+    return '/';
+  }
   try {
-    const u = new URL(p, ORIGIN);
+    const u = new URL(p, PUBLIC_ORIGIN);
     // Dot-segments can normalize "/a/..//evil.com" to "//evil.com" (protocol-relative): reject.
-    if (u.origin !== ORIGIN || u.pathname.startsWith("//")) return "/";
+    if (u.origin !== PUBLIC_ORIGIN || u.pathname.startsWith('//')) {
+      return '/';
+    }
     return u.pathname + u.search + u.hash;
   } catch {
-    return "/";
+    return '/';
   }
 }
