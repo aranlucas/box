@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
+import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
 import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printLabel, usePrinter } from '@/lib/printer';
@@ -15,61 +16,64 @@ import { LabelPreview } from '@/ui/label-preview';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
-type Draft = { title: string; room: string; notes: string; items: Item[] };
-const toDraft = (b: Box): Draft => ({ title: b.title, room: b.room ?? '', notes: b.notes ?? '', items: b.items });
-
 export default function BoxScreen() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const boxId = (id ?? '').toUpperCase();
   const qc = useQueryClient();
   const boxQuery = useQuery(queries.box(boxId));
   const box = boxQuery.data ?? null;
-  // Local edits layered on top of the server copy; null = no unsaved changes.
-  const [edits, setEdits] = useState<Draft | null>(null);
-  const draft = edits ?? (box ? toDraft(box) : null);
-  const setDraft = (d: Draft) => setEdits(d);
+  // Local edits plus the server version they started from; null = no unsaved changes.
+  const [edit, setEdit] = useState<Edit | null>(null);
+  const draft = edit?.draft ?? (box ? toDraft(box) : null);
+  const setDraft = (d: Draft) => setEdit((cur) => ({ base: cur?.base ?? box!, draft: d }));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const itemForm = useForm<{ name: string }>({ defaultValues: { name: '' } });
   const printer = usePrinter();
 
-  /** Server returned a fresh box: update the cache, drop local edits, refresh lists. */
-  function accept(b: Box) {
+  /** Server returned a fresh box: update the cache and refresh lists. */
+  function cache(b: Box) {
     qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: b.can_edit ?? box?.can_edit });
-    setEdits(null);
     qc.invalidateQueries({ queryKey: queries.allBoxes() });
   }
 
-  const dirty = useMemo(() => {
-    if (!box || !edits) return false;
-    return (
-      edits.title !== box.title ||
-      edits.room !== (box.room ?? '') ||
-      edits.notes !== (box.notes ?? '') ||
-      JSON.stringify(edits.items.map((i) => [i.name, i.quantity])) !== JSON.stringify(box.items.map((i) => [i.name, i.quantity]))
-    );
-  }, [box, edits]);
+  const dirty = useMemo(() => !!edit && hasChanges(changes(edit.base, edit.draft)), [edit]);
 
   const layout = useMemo(() => titleLayout(draft?.title ?? ''), [draft?.title]);
 
+  // Sends only what changed since editing started; the item list carries the version it was based on,
+  // so it can't silently overwrite someone else's additions (server answers 409).
   const saveMut = useMutation({
-    mutationFn: async (d: Draft): Promise<Box> => {
-      let b = box!;
-      if (d.title !== b.title || d.room !== (b.room ?? '') || d.notes !== (b.notes ?? '')) {
-        b = await api.updateBox(b.id, { title: d.title.trim() || `Box ${b.number}`, room: d.room, notes: d.notes });
-      }
-      if (JSON.stringify(d.items) !== JSON.stringify(box!.items)) b = await api.saveItems(b.id, d.items);
+    mutationFn: async (e: Edit): Promise<Box> => {
+      const c = changes(e.base, e.draft);
+      let b = e.base;
+      if (c.items) b = await api.saveItems(b.id, c.items, e.base.updated_at);
+      if (Object.keys(c.meta).length) b = await api.updateBox(b.id, c.meta);
       return b;
     },
-    onSuccess: accept,
-    onError: (e) => setError(e.message),
+    onSuccess: (b, saved) => {
+      cache(b);
+      setEdit((cur) => afterSave(cur, saved.draft, b));
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        qc.invalidateQueries({ queryKey: queries.box(boxId).queryKey });
+      }
+      setError(e.message);
+    },
   });
 
   async function save(): Promise<Box | null> {
-    if (!box || !draft) return null;
-    if (!dirty) return box;
+    if (!box) return null;
+    if (!edit || !dirty) return box;
     setError(null);
-    return saveMut.mutateAsync(draft).catch(() => null);
+    return saveMut.mutateAsync(edit).catch(() => null);
+  }
+
+  /** After a 409: throw away local edits and show the latest version. */
+  function discardEdits() {
+    setEdit(null);
+    setError(null);
   }
 
   async function print() {
@@ -89,7 +93,8 @@ export default function BoxScreen() {
     mutationFn: (photo: FormDataPhoto) => api.addPhoto(boxId, photo),
     onSuccess: ({ box: b, aiFailed }) => {
       const added = b.items.length - (box?.items.length ?? 0);
-      accept(b);
+      cache(b);
+      setEdit((cur) => afterPhoto(cur, b));
       setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
     },
     onError: (e) => setError(e.message),
@@ -110,8 +115,9 @@ export default function BoxScreen() {
   const statusMut = useMutation({
     mutationFn: (status: Box['status']) => api.updateBox(boxId, { status }),
     onSuccess: (b) => {
-      qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: box?.can_edit });
-      qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      cache(b);
+      // keep any unsaved edits, rebased on the new version
+      setEdit((cur) => (cur ? { base: b, draft: cur.draft } : null));
     },
     onError: (e) => setError(e.message),
   });
@@ -140,7 +146,7 @@ export default function BoxScreen() {
     ]);
   }
 
-  const setItems = (fn: (items: Item[]) => Item[]) => draft && setEdits({ ...draft, items: fn(draft.items) });
+  const setItems = (fn: (items: Item[]) => Item[]) => draft && setDraft({ ...draft, items: fn(draft.items) });
 
   const addItem = () =>
     void itemForm.handleSubmit(({ name }) => {
@@ -236,6 +242,9 @@ export default function BoxScreen() {
 
       {notice ? <Banner tone="success">{notice}</Banner> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {saveMut.error instanceof ApiError && saveMut.error.status === 409 ? (
+        <Button label="Discard my edits and reload" variant="secondary" onPress={discardEdits} />
+      ) : null}
 
       <Card>
         <View style={[styles.row, { justifyContent: 'space-between' }]}>

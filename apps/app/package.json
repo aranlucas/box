@@ -40,7 +40,8 @@
     "@types/react": "~19.3.0",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~58.0.4",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.1"
   },
   "scripts": {
     "start": "expo start",
@@ -50,7 +51,8 @@
     "lint": "expo lint",
     "export:web": "expo export -p web",
     "typecheck": "tsc --noEmit",
-    "build:android": "EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev expo prebuild -p android --clean && cd android && EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev ./gradlew assembleRelease"
+    "build:android": "EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev expo prebuild -p android --clean && cd android && EXPO_PUBLIC_API_URL=https://bx.aranlucas.workers.dev ./gradlew assembleRelease",
+    "test": "vitest run"
   },
   "private": true
 }

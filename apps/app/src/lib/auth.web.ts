@@ -10,5 +10,7 @@ export async function signIn(returnTo?: string): Promise<boolean> {
 }
 
 export async function signOut() {
-  await fetch('/auth/logout', { method: 'POST' }).catch(() => {});
+  // The session cookie is HttpOnly: only the server can end it, so a failed logout must not look successful.
+  const res = await fetch('/auth/logout', { method: 'POST' }).catch(() => null);
+  if (!res?.ok) throw new Error('Could not sign out. Check your connection and try again.');
 }

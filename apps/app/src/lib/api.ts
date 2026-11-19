@@ -80,7 +80,9 @@ export const api = {
     request<{ box: Box; aiFailed: boolean }>(`/boxes/${id}/photos`, { method: 'POST', body: photoForm(photo) }),
   updateBox: (id: string, patch: Partial<Pick<Box, 'title' | 'room' | 'notes' | 'status'>>) =>
     request<{ box: Box }>(`/boxes/${id}`, json('PATCH', patch)).then((r) => r.box),
-  saveItems: (id: string, items: Item[]) => request<{ box: Box }>(`/boxes/${id}/items`, json('PUT', { items })).then((r) => r.box),
+  /** ifUpdatedAt: the box version the editor started from; the server answers 409 if it changed. */
+  saveItems: (id: string, items: Item[], ifUpdatedAt?: number) =>
+    request<{ box: Box }>(`/boxes/${id}/items`, json('PUT', { items, if_updated_at: ifUpdatedAt })).then((r) => r.box),
   deleteBox: (id: string) => request<{ ok: true }>(`/boxes/${id}`, { method: 'DELETE' }),
 };
 

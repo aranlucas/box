@@ -49,7 +49,13 @@ function SignedOut({ error }: { error?: string | null }) {
 function NoHouse({ claimable, name }: { claimable: boolean; name: string | null }) {
   const enterHouse = useEnterHouse();
   const signOut = useSignOut();
-  const form = useForm<{ key: string }>({ defaultValues: { key: '' }, mode: 'onChange' });
+  // Browsers set up before sign-in still have the old key saved: pre-fill it.
+  const legacyKey = useQuery(queries.legacyKey()).data;
+  const form = useForm<{ key: string }>({
+    defaultValues: { key: '' },
+    values: legacyKey ? { key: legacyKey } : undefined,
+    mode: 'onChange',
+  });
   const claimMut = useMutation({ mutationFn: (key: string) => api.claimHome(key), onSuccess: enterHouse });
   const claim = () => void form.handleSubmit(({ key }) => claimMut.mutate(key.trim()))();
   const err = claimMut.error ? errMsg(claimMut.error) : null;
@@ -81,7 +87,8 @@ function NoHouse({ claimable, name }: { claimable: boolean; name: string | null 
         <Text style={styles.h2}>Joining someone’s house?</Text>
         <Text style={styles.body}>Ask a household member to send you an invite link, then open it on this device.</Text>
       </Card>
-      <Button label="Sign out" variant="ghost" onPress={() => signOut.mutate()} />
+      {signOut.error ? <Banner tone="error">{errMsg(signOut.error)}</Banner> : null}
+      <Button label="Sign out" variant="ghost" busy={signOut.isPending} onPress={() => signOut.mutate()} />
     </Screen>
   );
 }
@@ -122,7 +129,7 @@ function Boxes() {
         </View>
       ) : null}
       <PrinterBar />
-      <Button label="＋  New box" big onPress={() => router.push('/new')} />
+      <Button label="＋  New box" big onPress={() => router.push({ pathname: '/new', params: { house: house.id } })} />
       <Field
         value={q}
         onChangeText={setQ}
@@ -168,7 +175,8 @@ function Boxes() {
       <Text style={[styles.muted, { textAlign: 'center' }]}>
         Signed in as {session.me?.user?.name ?? session.me?.user?.email}
       </Text>
-      <Button label="Sign out" variant="ghost" onPress={() => signOut.mutate()} />
+      {signOut.error ? <Banner tone="error">{errMsg(signOut.error)}</Banner> : null}
+      <Button label="Sign out" variant="ghost" busy={signOut.isPending} onPress={() => signOut.mutate()} />
     </Screen>
   );
 }

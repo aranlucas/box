@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
@@ -11,12 +11,18 @@ import { Banner, Button, Screen, styles } from '@/ui/components';
 import { colors, space } from '@/ui/theme';
 
 export default function NewBox() {
-  const { house } = useSession();
+  // The destination house is fixed when "New box" was tapped, not re-read when the photo comes back.
+  const params = useLocalSearchParams<{ house?: string }>();
+  const session = useSession();
+  const houseId = params.house ?? session.house?.id ?? null;
+  const houseName = session.me?.houses.find((h) => h.id === houseId)?.name;
   const qc = useQueryClient();
+  // Kept so a failed upload can be retried without retaking the photo.
+  const [photo, setPhoto] = useState<FormDataPhoto | null>(null);
   const create = useMutation({
-    mutationFn: (photo: FormDataPhoto) => {
-      if (!house) throw new Error('Pick a house first.');
-      return api.createBox(house.id, photo);
+    mutationFn: (p: FormDataPhoto) => {
+      if (!houseId) throw new Error('Pick a house first.');
+      return api.createBox(houseId, p);
     },
     onSuccess: (res) => {
       qc.setQueryData(queries.box(res.box.id).queryKey, res.box);
@@ -29,8 +35,11 @@ export default function NewBox() {
   async function go(source: 'camera' | 'library') {
     setPickError(null);
     try {
-      const photo = await takeBoxPhoto(source);
-      if (photo) create.mutate(photo);
+      const taken = await takeBoxPhoto(source);
+      if (taken) {
+        setPhoto(taken);
+        create.mutate(taken);
+      }
     } catch (e) {
       setPickError(e instanceof Error ? e.message : String(e));
     }
@@ -53,7 +62,9 @@ export default function NewBox() {
       <Text style={styles.body}>
         Take one photo looking into the open box. Spread things out a little so the top layer is visible.
       </Text>
+      {houseName ? <Text style={styles.muted}>Adding to {houseName}</Text> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {create.isError && photo ? <Button label="Retry upload" onPress={() => create.mutate(photo)} /> : null}
       <Button label="Take photo" big onPress={() => go('camera')} />
       <Button label="Choose from photos" variant="secondary" onPress={() => go('library')} />
     </Screen>
