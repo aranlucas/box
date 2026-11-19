@@ -1,8 +1,9 @@
 import { env } from "cloudflare:workers";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { AuthorizationResponseError } from "oauth4webapi";
 import { allow, randomToken, s256, safeReturnPath, sha256Hex } from "../util.ts";
-import { authorizeUrl, exchangeCode, verifyIdToken, withUserInfo, type Identity } from "./oidc.ts";
+import { authorizeUrl, authServer, completeSignIn, newSignIn, type Identity } from "./oidc.ts";
 import { createSession, endSession, setSessionCookie } from "./session.ts";
 
 const REQUEST_TTL = 10 * 60 * 1000;
@@ -33,9 +34,15 @@ authRoutes.get("/auth/login", async (c) => {
     env.DB.prepare("DELETE FROM auth_requests WHERE expires_at < ?").bind(now),
     env.DB.prepare("DELETE FROM native_codes WHERE expires_at < ?").bind(now),
   ]);
-  const state = randomToken();
-  const nonce = randomToken();
-  const verifier = randomToken(48);
+  let as;
+  try {
+    as = await authServer();
+  } catch (err) {
+    console.error(`OIDC discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+    return c.text("Sign-in is unavailable right now. Try again in a minute.", 503);
+  }
+  const pending = newSignIn();
+  const { state, nonce, verifier } = pending;
   const nativeChallenge = c.req.query("native_challenge") || null;
   await env.DB.prepare(
     "INSERT INTO auth_requests (state, verifier, nonce, return_to, native_challenge, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -43,7 +50,7 @@ authRoutes.get("/auth/login", async (c) => {
     .bind(state, verifier, nonce, safeReturnPath(c.req.query("return")), nativeChallenge, now + REQUEST_TTL)
     .run();
   setCookie(c, STATE_COOKIE, state, { ...STATE_COOKIE_OPTS, maxAge: REQUEST_TTL / 1000 });
-  return c.redirect(authorizeUrl({ state, nonce, challenge: await s256(verifier), clientId: env.AUTH_CLIENT_ID }));
+  return c.redirect(await authorizeUrl(as, { clientId: env.AUTH_CLIENT_ID }, pending));
 });
 
 authRoutes.get("/auth/callback", async (c) => {
@@ -62,29 +69,22 @@ authRoutes.get("/auth/callback", async (c) => {
 
   if (!req || req.expires_at < Date.now()) return fail("expired");
   if (!browserState || browserState !== state) return fail("state_mismatch");
-  const error = c.req.query("error");
-  if (error) return fail(error);
-  const code = c.req.query("code");
-  if (!code) return fail("missing_code");
 
   let identity: Identity;
-  let accessToken: string | undefined;
   try {
-    const { id_token, access_token, scope } = await exchangeCode({
-      code,
-      verifier: req.verifier,
-      clientId: env.AUTH_CLIENT_ID,
-      clientSecret: env.AUTH_CLIENT_SECRET,
-    });
-    identity = await verifyIdToken(id_token, { clientId: env.AUTH_CLIENT_ID, nonce: req.nonce });
-    accessToken = access_token;
-    if (!identity.name || !identity.email) console.log(`ID token lacks name/email; granted scope: ${scope ?? "(none)"}`);
+    identity = await completeSignIn(
+      await authServer(),
+      { clientId: env.AUTH_CLIENT_ID, clientSecret: env.AUTH_CLIENT_SECRET },
+      new URL(c.req.url),
+      { state, nonce: req.nonce, verifier: req.verifier },
+    );
   } catch (err) {
+    // The auth service sent the user back with an error (e.g. access_denied): pass its code on.
+    if (err instanceof AuthorizationResponseError) return fail(err.error);
     console.error(`Sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
     return fail("sign_in_failed");
   }
 
-  identity = await withUserInfo(identity, accessToken);
   const userId = await upsertUser(identity.sub, identity.email ?? null, identity.name ?? null);
 
   if (req.native_challenge) {
