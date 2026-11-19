@@ -48,6 +48,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "pnpm -w exec oxlint --deny-warnings apps/app",
+    "check:expo": "expo install --check --pnpm && pnpm dlx expo-doctor@latest",
     "export:web": "expo export -p web",
     "typecheck": "tsc --noEmit",
     "build:android": "expo prebuild -p android --clean && cd android && ./gradlew assembleRelease",

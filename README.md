@@ -60,6 +60,7 @@ pnpm install
 pnpm lint                                   # workspace lint, including type-aware rules
 pnpm format:check                           # check formatting
 pnpm test                                   # workspace tests
+pnpm --filter app check:expo                 # SDK dependency alignment and Expo Doctor
 
 # Worker (needs apps/worker/.dev.vars with OPENAI_API_KEY and HOUSEHOLD_KEY)
 cd apps/worker && pnpm migrate:local && pnpm dev
@@ -69,6 +70,8 @@ cd apps/app && EXPO_PUBLIC_API_URL=http://localhost:8788 pnpm web
 ```
 
 Run `pnpm lint:fix` to apply automatic lint fixes and `pnpm format` to format the workspace.
+
+For Android development, run `EXPO_PUBLIC_API_URL=http://10.0.2.2:8788 pnpm android` from `apps/app` with the Worker running locally and an emulator connected. The Android build includes the native Bluetooth library required for printing. After changing native dependencies or config plugins, regenerate the Android project with `pnpm exec expo prebuild --platform android --clean` before rebuilding.
 
 ## Deploy
 
