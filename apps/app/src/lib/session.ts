@@ -16,7 +16,6 @@ export type Session =
       user: User;
       houses: House[];
       house?: House;
-      legacyHomeClaimable: boolean;
     };
 
 /** Who's signed in, their houses, and the house this device is currently looking at. */
@@ -29,12 +28,11 @@ export function useSession(): Session {
   if (!me.data?.user) {
     return { status: 'signed-out', error: me.error?.message };
   }
-  const { user, houses, legacyHomeClaimable } = me.data;
+  const { user, houses } = me.data;
   return {
     status: 'signed-in',
     user,
     houses,
-    legacyHomeClaimable,
     house: houses.find((h) => h.id === saved.data) ?? houses[0],
   };
 }
@@ -72,7 +70,6 @@ export function useSignOut() {
       qc.setQueryData(queries.me().queryKey, {
         user: null,
         houses: [],
-        legacyHomeClaimable: false,
       });
       await db.cleanup().catch(() => {});
       await qc.invalidateQueries({ queryKey: queries.me().queryKey });

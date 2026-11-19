@@ -28,16 +28,6 @@ export async function s256(verifier: string): Promise<string> {
   return b64url(await sha256(verifier));
 }
 
-/** Constant-time string comparison (compares SHA-256 digests so lengths don't leak). */
-export async function safeEqual(a: string, b: string): Promise<boolean> {
-  const [x, y] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
-  let diff = 0;
-  for (let i = 0; i < x.length; i++) {
-    diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
-  }
-  return diff === 0;
-}
-
 /** Per-IP rate limit; true when the request may proceed. */
 export async function allow(limiter: RateLimit, scope: string, c: Context): Promise<boolean> {
   const { success } = await limiter.limit({

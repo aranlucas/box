@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Integration check for houses, invites, claim, house-scoped box access and shared printing.
+// Integration check for houses, invites, house-scoped box access and shared printing.
 // Starts `cf dev` against a throwaway local D1/R2, runs the scenario, then stops it.
 // Usage: node test/api-check.mjs        (from apps/worker; BX_VERBOSE=1 to see the Worker's logs)
 import { spawn, execFileSync } from 'node:child_process';
@@ -16,7 +16,6 @@ const PORT = 8799;
 const B = `http://127.0.0.1:${PORT}`;
 const DB_ID = '52c32efc-6ee3-48d8-8b4e-f41ad071a511';
 const vars = readFileSync('.dev.vars', 'utf8');
-const KEY = /HOUSEHOLD_KEY=(.*)/.exec(vars)[1].trim();
 const CLIENT_ID = /AUTH_CLIENT_ID=(.*)/.exec(vars)[1].trim();
 const CLIENT_SECRET = /AUTH_CLIENT_SECRET=(.*)/.exec(vars)[1].trim();
 const persist = mkdtempSync(join(tmpdir(), 'bx-api-check-'));
@@ -128,16 +127,13 @@ async function waitUp() {
   throw new Error('dev server did not start');
 }
 
-async function call(method, path, { token, key, house, json, form, cookie } = {}) {
+async function call(method, path, { token, house, json, form, cookie } = {}) {
   const headers = {};
   if (cookie) {
     headers.cookie = cookie;
   }
   if (token) {
     headers.authorization = `Bearer ${token}`;
-  }
-  if (key) {
-    headers['x-household-key'] = key;
   }
   if (house) {
     headers['x-house-id'] = house;
@@ -216,19 +212,11 @@ try {
   const C = await login('carol');
   const D = await login('dave');
 
-  await check('legacy key can create a Home box before claim', async () => {
-    const r = await call('POST', '/api/boxes', { key: KEY, form: photoForm() });
-    assert.equal(r.status, 201, JSON.stringify(r.data));
-    assert.equal(r.data.box.number, 1);
-  });
-  const homeBox = (await call('GET', '/api/boxes', { key: KEY })).data.boxes[0].id;
-
-  await check('/api/me reports Home as claimable and no houses', async () => {
+  await check('signed-in users without a membership start with no houses', async () => {
     const r = await call('GET', '/api/me', { token: A });
     assert.equal(r.status, 200);
     assert.equal(r.data.user.name, 'alice');
     assert.deepEqual(r.data.houses, []);
-    assert.equal(r.data.legacyHomeClaimable, true);
   });
 
   await check('signed-out /api/me returns user null', async () => {
@@ -241,28 +229,30 @@ try {
     assert.equal(r.status, 403);
   });
 
-  await check('claim with the wrong key fails', async () => {
-    const r = await call('POST', '/api/houses/HOME0000/claim', {
-      token: A,
-      json: { key: 'wrong' },
+  await check('old household-key endpoints are retired and a key grants no access', async () => {
+    const response = await fetch(`${B}/api/boxes`, {
+      headers: { 'x-household-key': 'retired-test-key', 'x-house-id': 'HOME0000' },
     });
-    assert.equal(r.status, 403);
+    assert.equal(response.status, 401);
+    assert.equal((await call('GET', '/api/auth/check')).status, 404);
+    assert.equal((await call('POST', '/api/houses/HOME0000/claim', { token: A })).status, 404);
   });
 
-  await check('alice claims Home with the key', async () => {
-    const r = await call('POST', '/api/houses/HOME0000/claim', { token: A, json: { key: KEY } });
-    assert.equal(r.status, 200, JSON.stringify(r.data));
-    const me = await call('GET', '/api/me', { token: A });
-    assert.deepEqual(me.data.houses, [{ id: 'HOME0000', name: 'Home', role: 'owner' }]);
-    assert.equal(me.data.legacyHomeClaimable, false);
-  });
+  // Set up the initial owner as a deployment administrator would, on the throwaway test database.
+  execFileSync('sqlite3', [
+    sqliteFile(),
+    `INSERT INTO members (house_id, user_id, role, created_at)
+     SELECT 'HOME0000', id, 'owner', 1 FROM users WHERE auth_sub = 'dev:alice';`,
+  ]);
+  const ownerSession = await call('GET', '/api/me', { token: A });
+  assert.deepEqual(ownerSession.data.houses, [{ id: 'HOME0000', name: 'Home', role: 'owner' }]);
 
-  await check('legacy key stops working after the claim', async () => {
-    assert.equal((await call('GET', '/api/boxes', { key: KEY })).status, 401);
-    assert.equal(
-      (await call('POST', '/api/houses/HOME0000/claim', { token: Bob, json: { key: KEY } })).status,
-      409,
-    );
+  let homeBox;
+  await check('owner can create a box in Home', async () => {
+    const r = await call('POST', '/api/boxes', { token: A, house: 'HOME0000', form: photoForm() });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.equal(r.data.box.number, 1);
+    homeBox = r.data.box.id;
   });
 
   let invite;
@@ -652,18 +642,6 @@ try {
     assert.equal(acc.data.status, 'expired');
   });
 
-  await check('household-key guessing on claim is rate limited', async () => {
-    const t = await login('guesser');
-    const statuses = [];
-    for (let i = 0; i < 8; i++) {
-      statuses.push(
-        (await call('POST', '/api/houses/HOME0000/claim', { token: t, json: { key: `guess${i}` } }))
-          .status,
-      );
-    }
-    assert.ok(statuses.includes(429), `expected a 429, got ${statuses.join(',')}`);
-  });
-
   await check(
     'uploads must really be images (HTML/SVG disguised as image/jpeg rejected)',
     async () => {
@@ -720,14 +698,6 @@ try {
     );
     const members = (await call('GET', `/api/houses/${garage}/members`, { token: A })).data.members;
     assert.equal(members.filter((m) => m.name === 'racer1' || m.name === 'racer2').length, 1);
-  });
-
-  await check('wrong household keys are throttled on every route that checks them', async () => {
-    const statuses = [];
-    for (let i = 0; i < 70; i++) {
-      statuses.push((await call('GET', '/api/auth/check', { key: `wrong${i}` })).status);
-    }
-    assert.ok(statuses.includes(429), `expected 429 among ${[...new Set(statuses)].join(',')}`);
   });
 
   await check('native exchange rejects a bad code', async () => {

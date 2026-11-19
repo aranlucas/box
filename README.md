@@ -34,7 +34,6 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 
 - **Viewing** a box only needs its link. The link contains an unguessable 8-character ID, and that's what the QR code holds.
 - **Creating, listing, searching, editing and printing** need you to be signed in and a member of the box's house. Owners invite members with a one-time link from **Settings**.
-- Boxes packed before sign-in existed live in a house called **Home**. The first person to enter the old household key (the `HOUSEHOLD_KEY` Worker secret) becomes its owner, and the key stops working after that.
 
 ## Search boxes
 
@@ -65,7 +64,7 @@ pnpm typecheck                              # typecheck every package
 pnpm test                                   # workspace tests
 pnpm --filter app check:expo                 # SDK dependency alignment and Expo Doctor
 
-# Worker (needs apps/worker/.dev.vars with OPENAI_API_KEY, HOUSEHOLD_KEY, AUTH_CLIENT_ID and AUTH_CLIENT_SECRET)
+# Worker (needs apps/worker/.dev.vars with OPENAI_API_KEY, AUTH_CLIENT_ID and AUTH_CLIENT_SECRET)
 cd apps/worker && pnpm migrate:local && pnpm dev
 pnpm test:api                               # HTTP checks against a throwaway local Worker (from apps/worker)
 
@@ -93,6 +92,7 @@ To use your own Cloudflare account, create your own resources and point the conf
 1. Create a D1 database and an R2 bucket with `cf d1 create` and `cf r2 buckets create`.
 2. Put their IDs in `apps/worker/cloudflare.config.ts` and the `migrate` scripts.
 3. Change the Worker `name` there too.
+4. After applying the migrations and signing in for the first time, add that account as an owner of `HOME0000` in the D1 `members` table. Use the account's `users.id` as `user_id`, `owner` as the role, and the current Unix time in milliseconds as `created_at`.
 
 ## Build the Android APK
 

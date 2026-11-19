@@ -3,7 +3,6 @@ import { useDbClient, useLiveQuery } from '@tanstack/react-db';
 import { onlineManager, useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { useForm } from 'react-hook-form';
 import {
   ActivityIndicator,
   Image,
@@ -14,10 +13,10 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 
-import { api, type BoxSummary, type House, type User } from '@/lib/api';
+import type { BoxSummary, House, User } from '@/lib/api';
 import { boxInventory, orderedBoxInventory } from '@/lib/boxes';
 import { queries } from '@/lib/queries';
-import { useEnterHouse, useSession, useSetHouse, useSignIn, useSignOut } from '@/lib/session';
+import { useSession, useSetHouse, useSignIn, useSignOut } from '@/lib/session';
 import {
   Banner,
   Button,
@@ -30,7 +29,6 @@ import {
   styles,
   UnpackedBadge,
 } from '@/ui/components';
-import { FormField } from '@/ui/form-field';
 import { PrinterMenu } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
@@ -70,7 +68,7 @@ export default function Home() {
     );
   }
   if (!session.house) {
-    return <NoHouse user={session.user} claimable={session.legacyHomeClaimable} />;
+    return <NoHouse user={session.user} />;
   }
   return <Boxes userId={session.user.id} house={session.house} houses={session.houses} />;
 }
@@ -104,7 +102,7 @@ function SignedOut({ error }: { error?: string }) {
   );
 }
 
-function NoHouse({ user, claimable }: { user: User; claimable: boolean }) {
+function NoHouse({ user }: { user: User }) {
   const signOut = useSignOut();
   const [firstName] = user.name?.split(' ') ?? [];
   return (
@@ -112,7 +110,6 @@ function NoHouse({ user, claimable }: { user: User; claimable: boolean }) {
       <Text style={styles.h1} accessibilityRole="header">
         {firstName ? `Hi, ${firstName}` : 'Hi'}
       </Text>
-      {claimable ? <ClaimHome /> : null}
       <Card>
         <Text style={styles.h2}>Joining someone’s house?</Text>
         <Text style={styles.body}>
@@ -129,51 +126,6 @@ function NoHouse({ user, claimable }: { user: User; claimable: boolean }) {
         }}
       />
     </Screen>
-  );
-}
-
-/** Boxes packed before sign-in existed live in "Home", which the old household key unlocks once. */
-function ClaimHome() {
-  const enterHouse = useEnterHouse();
-  const form = useForm({
-    defaultValues: { key: '' },
-    mode: 'onChange',
-  });
-  const claim = useMutation({
-    mutationFn: (key: string) => api.claimHome(key),
-    onSuccess: enterHouse,
-  });
-  const submit = () => {
-    void form.handleSubmit(({ key }) => {
-      claim.mutate(key.trim());
-    })();
-  };
-
-  return (
-    <Card>
-      <Text style={styles.h2}>Claim your existing boxes</Text>
-      <Text style={styles.body}>
-        Boxes packed before sign-in live in a house called “Home”. Enter the old household key once
-        to become its owner.
-      </Text>
-      <FormField
-        control={form.control}
-        name="key"
-        rules={{ validate: (key) => key.trim().length > 0 || 'Enter the household key' }}
-        label="Household key"
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry
-        onSubmitEditing={submit}
-      />
-      {claim.error ? <Banner tone="error">{claim.error.message}</Banner> : null}
-      <Button
-        label="Claim Home"
-        busy={claim.isPending}
-        disabled={!form.formState.isValid}
-        onPress={submit}
-      />
-    </Card>
   );
 }
 

@@ -2,26 +2,13 @@ import type { House, InviteInfo, InviteStatus, Me, Member, PendingInvite, Role }
 import { env } from 'cloudflare:workers';
 import { Hono, type Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
-import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { userFromRequest, type User } from './auth/session.ts';
-import { allow, body, PUBLIC_ORIGIN, randomToken, safeEqual, sha256Hex } from './util.ts';
+import { allow, body, PUBLIC_ORIGIN, randomToken, sha256Hex } from './util.ts';
 
-export const HOME_ID = 'HOME0000';
 const INVITE_TTL = 7 * 24 * 60 * 60 * 1000;
 const HOUSE_NAME_MAX = 60;
 const TOO_MANY = 'Too many attempts. Try again in a minute.';
-
-export type Actor = { user: User | null; legacy: boolean };
-
-async function homeUnclaimed(): Promise<boolean> {
-  const owner = await env.DB.prepare(
-    "SELECT 1 FROM members WHERE house_id = ? AND role = 'owner' LIMIT 1",
-  )
-    .bind(HOME_ID)
-    .first();
-  return !owner;
-}
 
 async function roleIn(userId: string, houseId: string): Promise<Role | undefined> {
   const row = await env.DB.prepare('SELECT role FROM members WHERE house_id = ? AND user_id = ?')
@@ -30,49 +17,29 @@ async function roleIn(userId: string, houseId: string): Promise<Role | undefined
   return row?.role;
 }
 
-/**
- * Who is calling: a signed-in user, and/or a legacy household-key holder. The legacy key only
- * counts while Home has no owner, so claiming Home switches it off.
- */
-export async function actorFrom(c: Context): Promise<Actor> {
-  const user = await userFromRequest(c);
-  const key = c.req.header('x-household-key');
-  if (!key) {
-    return { user, legacy: false };
-  }
-  if (!(await allow(env.KEY_LIMIT, 'key', c))) {
-    throw new HTTPException(429, { message: TOO_MANY });
-  }
-  return { user, legacy: (await safeEqual(key, env.HOUSEHOLD_KEY)) && (await homeUnclaimed()) };
-}
-
-export async function canAccessHouse(actor: Actor, houseId: string): Promise<boolean> {
-  if (actor.user && (await roleIn(actor.user.id, houseId))) {
-    return true;
-  }
-  return actor.legacy && houseId === HOME_ID;
+export async function canAccessHouse(user: User | null, houseId: string): Promise<boolean> {
+  return user !== null && (await roleIn(user.id, houseId)) !== undefined;
 }
 
 export type HouseEnv = { Variables: { houseId: string } };
 
 /** Lets the request through as `c.var.houseId` if the caller may use that house; otherwise the refusal. */
 export async function enterHouse(c: Context<HouseEnv>, houseId: string | undefined) {
-  const actor = await actorFrom(c);
-  if (!actor.user && !actor.legacy) {
+  const user = await userFromRequest(c);
+  if (!user) {
     return c.json({ error: 'Sign in required' }, 401);
   }
-  const id = houseId || (actor.legacy ? HOME_ID : undefined);
-  if (!id) {
+  if (!houseId) {
     return c.json({ error: 'Choose a house' }, 400);
   }
-  if (!(await canAccessHouse(actor, id))) {
+  if (!(await canAccessHouse(user, houseId))) {
     return c.json({ error: 'Not a member of this house' }, 403);
   }
-  c.set('houseId', id);
+  c.set('houseId', houseId);
   return undefined;
 }
 
-/** The caller must belong to the house named by x-house-id (legacy key → Home). */
+/** The caller must belong to the house named by x-house-id. */
 export const requireHouse = createMiddleware<HouseEnv>(
   async (c, next) => (await enterHouse(c, c.req.header('x-house-id'))) ?? next(),
 );
@@ -92,9 +59,9 @@ const requireUser = createMiddleware<UserEnv>(async (c, next) => {
 export const houseRoutes = new Hono<UserEnv>();
 
 houseRoutes.get('/me', async (c) => {
-  const [user, legacyHomeClaimable] = await Promise.all([userFromRequest(c), homeUnclaimed()]);
+  const user = await userFromRequest(c);
   if (!user) {
-    return c.json<Me>({ user, houses: [], legacyHomeClaimable });
+    return c.json<Me>({ user, houses: [] });
   }
   const { results: houses } = await env.DB.prepare(
     `SELECT h.id, h.name, m.role FROM members m JOIN houses h ON h.id = m.house_id
@@ -102,7 +69,7 @@ houseRoutes.get('/me', async (c) => {
   )
     .bind(user.id)
     .all<House>();
-  return c.json<Me>({ user, houses, legacyHomeClaimable });
+  return c.json<Me>({ user, houses });
 });
 
 const newHouse = z.object({
@@ -138,33 +105,6 @@ houseRoutes.post('/houses', requireUser, async (c) => {
     ).bind(id, user.id, now),
   ]);
   return c.json<{ house: House }>({ house: { id, name, role: 'owner' } });
-});
-
-const claim = z.object({ key: z.string('Wrong key').trim().min(1, 'Wrong key') });
-
-houseRoutes.post('/houses/:id/claim', requireUser, async (c) => {
-  if (c.req.param('id') !== HOME_ID) {
-    return c.json({ error: 'Not found' }, 404);
-  }
-  if (!(await allow(env.SENSITIVE_LIMIT, 'claim', c))) {
-    return c.json({ error: TOO_MANY }, 429);
-  }
-  const { key } = await body(c, claim);
-  if (!(await safeEqual(key, env.HOUSEHOLD_KEY))) {
-    return c.json({ error: 'Wrong key' }, 403);
-  }
-  // Single statement so two simultaneous claims can't both win.
-  const res = await env.DB.prepare(
-    `INSERT INTO members (house_id, user_id, role, created_at)
-     SELECT ?1, ?2, 'owner', ?3 WHERE NOT EXISTS (SELECT 1 FROM members WHERE house_id = ?1 AND role = 'owner')
-     ON CONFLICT (house_id, user_id) DO UPDATE SET role = 'owner'`,
-  )
-    .bind(HOME_ID, c.var.user.id, Date.now())
-    .run();
-  if (!res.meta.changes) {
-    return c.json({ error: 'Home has already been claimed' }, 409);
-  }
-  return c.json<{ house: House }>({ house: { id: HOME_ID, name: 'Home', role: 'owner' } });
 });
 
 houseRoutes.get('/houses/:id/members', requireUser, async (c) => {
