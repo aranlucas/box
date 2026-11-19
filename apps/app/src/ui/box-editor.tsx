@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, boxUrl, isApiError, type Box, type Item } from '@/lib/api';
+import { refreshHouseBoxes } from '@/lib/boxes';
 import { confirm } from '@/lib/confirm';
 import {
   afterPhoto,
@@ -73,7 +74,7 @@ export function BoxEditor({ box, fresh }: { box: Box; fresh?: Fresh }) {
   /** The server returned a newer version of the box: show it, and refresh the lists it appears in. */
   function cache(next: Box) {
     qc.setQueryData(queries.box(box.id).queryKey, next);
-    void qc.invalidateQueries({ queryKey: queries.allBoxes() });
+    void refreshHouseBoxes(qc, next.house_id);
   }
 
   // Sends only what changed since editing started; the item list carries the version it was based on,
@@ -159,7 +160,7 @@ export function BoxEditor({ box, fresh }: { box: Box; fresh?: Fresh }) {
         return;
       }
       qc.removeQueries({ queryKey: queries.box(box.id).queryKey });
-      void qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      void refreshHouseBoxes(qc, box.house_id);
       router.replace('/');
     },
   });

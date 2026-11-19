@@ -1,7 +1,8 @@
 import { Button as ExpoButton, Host, Picker, Text as ExpoText } from '@expo/ui';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useDbClient, useLiveQuery } from '@tanstack/react-db';
+import { onlineManager, useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   ActivityIndicator,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 
 import { api, type BoxSummary, type House, type User } from '@/lib/api';
+import { boxInventory, orderedBoxInventory } from '@/lib/boxes';
 import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession, useSetHouse, useSignIn, useSignOut } from '@/lib/session';
 import {
@@ -70,7 +72,7 @@ export default function Home() {
   if (!session.house) {
     return <NoHouse user={session.user} claimable={session.legacyHomeClaimable} />;
   }
-  return <Boxes house={session.house} houses={session.houses} />;
+  return <Boxes userId={session.user.id} house={session.house} houses={session.houses} />;
 }
 
 function SignedOut({ error }: { error?: string }) {
@@ -183,24 +185,65 @@ function useSearch() {
   const [text, setText] = useState('');
   const input = text.trim();
   const [query, setQuery] = useState('');
-  useEffect(() => {
-    // Clearing the field shows the full list at once.
-    const timer = setTimeout(setQuery, input ? SEARCH_DELAY_MS : 0, input);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [input]);
-  return { text, setText, input, query };
+  const latestInput = useRef('');
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const fieldRef = useCallback((field: unknown) => {
+    if (field === null) {
+      clearTimeout(timer.current);
+    }
+  }, []);
+  function changeText(value: string) {
+    setText(value);
+    const next = value.trim();
+    if (next === latestInput.current) {
+      return;
+    }
+    latestInput.current = next;
+    clearTimeout(timer.current);
+    if (next) {
+      timer.current = setTimeout(setQuery, SEARCH_DELAY_MS, next);
+    } else {
+      setQuery('');
+    }
+  }
+  return { text, changeText, fieldRef, input, query };
 }
 
-function Boxes({ house, houses }: { house: House; houses: House[] }) {
+function Boxes({ userId, house, houses }: { userId: string; house: House; houses: House[] }) {
   const setHouse = useSetHouse();
   const search = useSearch();
-  const list = useQuery(queries.boxes(house.id, search.query));
+  const db = useDbClient();
+  const collection = db.collection(boxInventory(house.id, userId));
+  const liveCollection = orderedBoxInventory(db, house.id, userId);
+  const inventory = useLiveQuery(liveCollection);
+
+  const matches = useQuery(queries.boxSearch(house.id, userId, search.query));
   // Rows for an older query are not the answer to what is in the field now.
-  const current = search.query === search.input && !list.isPlaceholderData;
-  const boxes = current ? list.data : undefined;
-  const refresh = useMutation({ mutationFn: () => list.refetch() });
+  const current = search.query === search.input;
+  const inventoryRows = inventory.isReady ? inventory.data : undefined;
+  const rows = search.input ? matches.data : inventoryRows;
+  const boxes = current ? rows : undefined;
+  const source = inventory.health?.sources[0];
+  const problem = source?.error ?? source?.failureReason ?? inventory.health?.error ?? null;
+  const cause = problem?.cause;
+  const inventoryError =
+    problem && (cause instanceof Error ? cause : new Error('Could not load boxes.'));
+  const activeError = search.input ? matches.error : inventoryError;
+  const error = current ? activeError : null;
+  const refresh = useMutation({
+    mutationFn: async () => {
+      if (!current || !onlineManager.isOnline()) {
+        return;
+      }
+      if (search.input) {
+        await matches.refetch();
+      } else if (inventory.isLoadingError) {
+        await liveCollection.reload();
+      } else if (!inventory.isCrashed) {
+        await collection.utils.refetch();
+      }
+    },
+  });
 
   return (
     <ListScreen
@@ -278,8 +321,9 @@ function Boxes({ house, houses }: { house: House; houses: House[] }) {
             </ExpoButton>
           </Host>
           <Field
+            ref={search.fieldRef}
             value={search.text}
-            onChangeText={search.setText}
+            onChangeText={search.changeText}
             accessibilityLabel="Search boxes"
             placeholder="Search for cables, baking supplies, #12…"
             autoCapitalize="none"
@@ -287,7 +331,7 @@ function Boxes({ house, houses }: { house: House; houses: House[] }) {
             clearButtonMode="while-editing"
             returnKeyType="search"
           />
-          <ListStatus error={current ? list.error : null} boxes={boxes} searching={search.input} />
+          <ListStatus error={error} boxes={boxes} searching={search.input} />
         </View>
       }
     />

@@ -3,6 +3,8 @@ import { defineConfig } from 'vite';
 
 // The Expo web export (apps/app/dist) is served as the Worker's static assets.
 // BX_PERSIST points local D1/R2 state at a throwaway directory (used by test/api-check.mjs).
+const persistPath: unknown = process.env.BX_PERSIST;
+
 export default defineConfig(({ command }) => ({
   publicDir: '../app/dist',
   define: {
@@ -14,6 +16,8 @@ export default defineConfig(({ command }) => ({
     __BX_DEV__: JSON.stringify(command === 'serve'),
   },
   plugins: [
-    cloudflare({ persistState: process.env.BX_PERSIST ? { path: process.env.BX_PERSIST } : true }),
+    cloudflare({
+      persistState: typeof persistPath === 'string' && persistPath ? { path: persistPath } : true,
+    }),
   ],
 }));

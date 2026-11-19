@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { api, type FormDataPhoto, type House } from '@/lib/api';
+import { refreshHouseBoxes } from '@/lib/boxes';
 import { takeBoxPhoto } from '@/lib/photo';
 import { queries } from '@/lib/queries';
 import { useSession } from '@/lib/session';
@@ -41,7 +42,7 @@ function NewBox({ house }: { house: House }) {
     mutationFn: (taken: FormDataPhoto) => api.createBox(house.id, taken),
     onSuccess: ({ box, aiFailed }) => {
       qc.setQueryData(queries.box(box.id).queryKey, box);
-      void qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      void refreshHouseBoxes(qc, box.house_id);
       router.replace({
         pathname: '/b/[id]',
         params: { id: box.id, fresh: aiFailed ? 'ai-failed' : '1' },

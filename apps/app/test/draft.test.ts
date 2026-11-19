@@ -1,14 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { Box } from '../src/lib/api';
-import {
-  afterPhoto,
-  afterSave,
-  changes,
-  newItem,
-  sameHousePlaceholder,
-  toDraft,
-} from '../src/lib/draft';
+import { afterPhoto, afterSave, changes, newItem, toDraft } from '../src/lib/draft';
 
 const box = (over: Partial<Box> = {}): Box => ({
   id: 'B1',
@@ -109,17 +102,5 @@ describe('newItem', () => {
     const base = box();
     const items = [...base.items, newItem('tape')];
     expect(changes({ base, draft: { ...toDraft(base), items } }).items).toEqual(items);
-  });
-});
-
-describe('sameHousePlaceholder', () => {
-  test('keeps previous rows while searching within the same house', () => {
-    const rows = [{ id: 'x' }];
-    expect(sameHousePlaceholder('H1')(rows, { queryKey: ['boxes', 'H1', 'pa'] })).toBe(rows);
-  });
-  test('drops previous rows when the house changes', () => {
-    expect(
-      sameHousePlaceholder('H2')([{ id: 'x' }], { queryKey: ['boxes', 'H1', ''] }),
-    ).toBeUndefined();
   });
 });
