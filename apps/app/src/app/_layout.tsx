@@ -3,6 +3,7 @@ import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Stack, type NativeStackHeaderProps, type NativeStackNavigationOptions } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform } from 'react-native';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 
 import { useSharePrinter } from '@/lib/household';
 import { queries } from '@/lib/queries';
@@ -26,20 +27,22 @@ const screenOptions: NativeStackNavigationOptions = {
 
 export default function RootLayout() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <DbProvider client={dbClient}>
-        <HouseholdSync />
-        <StatusBar style="dark" />
-        <Stack screenOptions={screenOptions}>
-          <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
-          <Stack.Screen name="new" options={{ title: 'New box' }} />
-          <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
-          <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-          <Stack.Screen name="invite/[token]" options={{ title: 'Invite' }} />
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-        </Stack>
-      </DbProvider>
-    </QueryClientProvider>
+    <KeyboardProvider>
+      <QueryClientProvider client={queryClient}>
+        <DbProvider client={dbClient}>
+          <HouseholdSync />
+          <StatusBar style="dark" />
+          <Stack screenOptions={screenOptions}>
+            <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
+            <Stack.Screen name="new" options={{ title: 'New box' }} />
+            <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
+            <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+            <Stack.Screen name="invite/[token]" options={{ title: 'Invite' }} />
+            <Stack.Screen name="auth" options={{ headerShown: false }} />
+          </Stack>
+        </DbProvider>
+      </QueryClientProvider>
+    </KeyboardProvider>
   );
 }
 

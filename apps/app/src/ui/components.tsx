@@ -1,20 +1,20 @@
 import type { BoxRow } from '@mj/api';
+import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import type { ComponentProps, ReactElement, ReactNode } from 'react';
+import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
-  type ListRenderItem,
   type ScrollViewProps,
   type ViewStyle,
 } from 'react-native';
+import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, MAX_WIDTH, radius, space, TAP } from './theme';
@@ -42,7 +42,6 @@ function useScrolling({ onRefresh, refreshing = false }: Refresh, hasFooter = fa
     props: {
       keyboardShouldPersistTaps: 'handled',
       keyboardDismissMode: 'on-drag',
-      automaticallyAdjustKeyboardInsets: true,
       refreshControl: onRefresh ? (
         <RefreshControl
           refreshing={refreshing}
@@ -62,19 +61,37 @@ type ScreenProps = Refresh & {
   footer?: ReactNode;
 };
 
-/** Page body: a centred column that scrolls. */
+/**
+ * Page body: a centred column that scrolls. A focused field is scrolled clear of the keyboard, and
+ * the footer rides on top of it. Android apps are edge-to-edge, so the window no longer resizes for
+ * the keyboard by itself.
+ */
 export function Screen({ children, safeTop = false, footer, ...refresh }: ScreenProps) {
   const insets = useSafeAreaInsets();
   const scrolling = useScrolling(refresh, !!footer);
+  const [footerHeight, setFooterHeight] = useState(0);
   return (
     <SafeAreaView style={styles.screen} edges={edges(safeTop)}>
-      <ScrollView {...scrolling.props} contentContainerStyle={[styles.scroll, scrolling.bottom]}>
+      <KeyboardAwareScrollView
+        {...scrolling.props}
+        // Stop scrolling once the field clears the footer, which sits on the keyboard.
+        bottomOffset={space(4) + (footer ? footerHeight : 0)}
+        contentContainerStyle={[styles.scroll, scrolling.bottom]}
+      >
         <View style={styles.column}>{children}</View>
-      </ScrollView>
+      </KeyboardAwareScrollView>
       {footer ? (
-        <View style={[styles.footer, { paddingBottom: space(3) + insets.bottom }]}>
-          <View style={styles.footerColumn}>{footer}</View>
-        </View>
+        // Open, the keyboard covers the gesture bar, so drop the inset the footer keeps clear of it.
+        <KeyboardStickyView offset={{ opened: insets.bottom }}>
+          <View
+            style={[styles.footer, { paddingBottom: space(3) + insets.bottom }]}
+            onLayout={(event) => {
+              setFooterHeight(event.nativeEvent.layout.height);
+            }}
+          >
+            <View style={styles.footerColumn}>{footer}</View>
+          </View>
+        </KeyboardStickyView>
       ) : null}
     </SafeAreaView>
   );
@@ -97,19 +114,32 @@ export function ListScreen<T>({
   ...refresh
 }: ListScreenProps<T>) {
   const scrolling = useScrolling(refresh);
+  // FlashList positions rows itself, so the centred column is made with side padding, which keeps
+  // the whole screen width scrollable on wide web windows.
+  const { width } = useWindowDimensions();
+  const side = space(4) + Math.max(0, (width - MAX_WIDTH) / 2);
   return (
     <SafeAreaView style={styles.screen} edges={edges(true)}>
-      <FlatList
+      <FlashList
         {...scrolling.props}
         data={data}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
+        ItemSeparatorComponent={RowGap}
         ListHeaderComponent={header}
         ListHeaderComponentStyle={styles.listHeader}
-        contentContainerStyle={[styles.column, styles.list, scrolling.bottom]}
+        contentContainerStyle={{
+          paddingTop: space(4),
+          paddingHorizontal: side,
+          ...scrolling.bottom,
+        }}
       />
     </SafeAreaView>
   );
+}
+
+function RowGap() {
+  return <View style={styles.rowGap} />;
 }
 
 /** A screen that is still fetching what it shows. */
@@ -301,7 +331,7 @@ export const styles = StyleSheet.create({
     flexGrow: 1,
   },
   // Rows sit closer together than the sections of a page.
-  list: { gap: space(2) },
+  rowGap: { height: space(2) },
   listHeader: { marginBottom: space(2) },
   loading: { marginTop: space(10) },
   footer: {
