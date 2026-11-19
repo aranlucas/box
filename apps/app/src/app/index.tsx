@@ -5,10 +5,13 @@ import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, type BoxSummary } from '@/lib/api';
+import { remotePrinters, useHousehold } from '@/lib/household';
+import { usePrinter } from '@/lib/printer';
 import { queries } from '@/lib/queries';
 import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
+import { PrinterButton, PrinterOptions } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -124,6 +127,14 @@ function Boxes() {
     await list.refetch();
     setRefreshing(false);
   }
+  const [printerOptionsOpen, setPrinterOptionsOpen] = useState(false);
+  const printer = usePrinter();
+  const household = useHousehold();
+  const localReady = printer.status === 'connected' || printer.status === 'printing';
+  // A printer on another device in this house, when this device has none connected.
+  const via = localReady || household.houseId !== house.id ? undefined : remotePrinters(household)[0];
+  const printerAvailable = localReady || !!via;
+  const printingUnavailable = !printerAvailable && printer.status === 'unsupported';
 
   return (
     <Screen safeTop onRefresh={refresh} refreshing={refreshing}>
@@ -137,8 +148,15 @@ function Boxes() {
             <Text style={styles.h1}>Boxes</Text>
           </View>
         </View>
-        <Button label="Settings" variant="secondary" onPress={() => router.push('/settings')} />
+        <View style={[styles.row, { gap: space(1), flexShrink: 0 }]}>
+          <PrinterButton
+            availability={printerAvailable ? 'ready' : printingUnavailable ? 'unavailable' : 'setup'}
+            onPress={() => setPrinterOptionsOpen(true)}
+          />
+          <Button label="Settings" variant="secondary" onPress={() => router.push('/settings')} />
+        </View>
       </View>
+      <PrinterOptions visible={printerOptionsOpen} houseId={house.id} onClose={() => setPrinterOptionsOpen(false)} />
       {houses.length > 1 ? (
         <View style={[styles.row, { flexWrap: 'wrap' }]}>
           {houses.map((h) => (
