@@ -85,11 +85,39 @@ describe('renderLabel', () => {
     expect(cov).toBeLessThan(0.45);
   });
 
-  it('keeps QR (left 96 cols) and text (x >= 96) apart', () => {
+  it.each([
+    ['https://bx.aranlucas.workers.dev/b/K7Q2M9P4', 2, 33],
+    ['https://moving-journey.example.workers.dev/b/K7Q2M9P4', 2, 37],
+    ['https://bx.co/b/K7Q2M9P4', 3, 21],
+  ])('leaves a four-module quiet zone around %s', (url, dotsPerModule, modules) => {
+    const bmp = renderLabel({ ...input, url });
+    const firstDot = bmp.data.findIndex((dot, i) => dot === 1 && i % bmp.width < LABEL_H);
+    const top = Math.floor(firstDot / bmp.width);
+    const left = firstDot % bmp.width;
+    const topRow = bmp.data.subarray(top * bmp.width, top * bmp.width + LABEL_H);
+    const right = topRow.lastIndexOf(1) + 1;
+    const bottom = top + right - left;
+
+    // The top edge of the finder pattern is seven modules wide.
+    const cell = (topRow.indexOf(0, left) - left) / 7;
+    const quiet = cell * 4;
+    expect(Math.min(top, left, bmp.height - bottom, LABEL_H - right)).toBeGreaterThanOrEqual(quiet);
+    for (let y = top - quiet; y < bottom + quiet; y++) {
+      const row = y * bmp.width;
+      const hasInk = (from: number, to: number) => bmp.data.subarray(row + from, row + to).includes(1);
+      if (y < top || y >= bottom) {
+        expect(hasInk(left - quiet, right + quiet)).toBe(false);
+      } else {
+        expect(hasInk(left - quiet, left)).toBe(false);
+        expect(hasInk(right, right + quiet)).toBe(false);
+      }
+    }
+    expect(cell).toBe(dotsPerModule);
+    expect(right - left).toBe(dotsPerModule * modules);
+  });
+
+  it('keeps the label edges clear', () => {
     const bmp = renderLabel(input);
-    // QR quiet zone: columns 90..95 are blank
-    for (let y = 0; y < 96; y++) for (let x = 90; x < 96; x++) expect(bmp.data[y * 320 + x]).toBe(0);
-    // top and bottom 2 rows blank
     for (const y of [0, 1, 94, 95]) for (let x = 0; x < 320; x++) expect(bmp.data[y * 320 + x]).toBe(0);
   });
 
