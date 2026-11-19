@@ -1,5 +1,5 @@
+import { LegendList, type LegendListRenderItemProps } from '@legendapp/list/react-native';
 import type { BoxRow } from '@mj/api';
-import { FlashList, type ListRenderItem } from '@shopify/flash-list';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import {
@@ -102,7 +102,7 @@ type ListScreenProps<T> = Refresh & {
   header: ReactElement;
   data: readonly T[];
   keyExtractor: (item: T) => string;
-  renderItem: ListRenderItem<T>;
+  renderItem: (props: LegendListRenderItemProps<T>) => ReactNode;
 };
 
 /** A <Screen> whose body is a long list: rows are rendered as they scroll into view. */
@@ -114,14 +114,14 @@ export function ListScreen<T>({
   ...refresh
 }: ListScreenProps<T>) {
   const scrolling = useScrolling(refresh);
-  // FlashList positions rows itself, so the centred column is made with side padding, which keeps
-  // the whole screen width scrollable on wide web windows.
+  // Side padding centres the content and keeps the whole screen width scrollable on web.
   const { width } = useWindowDimensions();
   const side = space(4) + Math.max(0, (width - MAX_WIDTH) / 2);
   return (
     <SafeAreaView style={styles.screen} edges={edges(true)}>
-      <FlashList
+      <LegendList
         {...scrolling.props}
+        recycleItems
         data={data}
         keyExtractor={keyExtractor}
         renderItem={renderItem}

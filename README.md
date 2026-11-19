@@ -79,6 +79,10 @@ For Android development, run `EXPO_PUBLIC_API_URL=http://10.0.2.2:8788 pnpm andr
 
 ## Deploy
 
+For Cloudflare Workers Builds, connect the existing `bx` Worker to this repository, then use `main` as the production branch and the repository root as the build root. Set the build command to `pnpm check && pnpm build:web` and the deploy command to `pnpm --filter worker exec cf deploy --no-provision`. Use Node 24 and the pnpm version in the root package manifest. The deploy inherits the Worker's runtime secrets and reuses its bindings. Apply any required D1 migrations separately before deploying code that depends on them.
+
+For manual deployments:
+
 ```sh
 pnpm --filter worker migrate   # applies D1 migrations, including the search cache
 pnpm run deploy   # exports the Expo web build, then `cf deploy` with the secrets in .dev.vars

@@ -1,17 +1,16 @@
 // Native (Android) printer: Phomemo D30 over BLE via react-native-ble-plx.
 // Same print job bytes as the web build (from @mj/label); only the transport differs.
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buildJob, checkD30Media, chunks, type LabelInput, type Rotation } from '@mj/label';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, State, type Device } from 'react-native-ble-plx';
 
+import { preferenceKeys, preferences } from './preferences';
 import { createStore, type PrinterState } from './store';
 import { errorMessage, sleep, toBase64 } from './util';
 
 const SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 const WRITE_CHAR = '0000ff02-0000-1000-8000-00805f9b34fb';
 const NOTIFY_CHAR = '0000ff03-0000-1000-8000-00805f9b34fb';
-const DEVICE_KEY = 'printer-device-id';
 const SCAN_MS = 10_000;
 /** The model this app is built for; its sibling "D…" printers speak the same raster protocol. */
 const D30 = /^D30/i;
@@ -123,7 +122,7 @@ async function attach(d: Device) {
       store.set({ status: 'disconnected' });
     }
   });
-  await AsyncStorage.setItem(DEVICE_KEY, connected.id);
+  await preferences.setItem(preferenceKeys.printerId, connected.id);
   store.set({ status: 'connected', name: connected.name ?? 'D30', error: undefined });
 }
 
@@ -147,7 +146,7 @@ export async function tryReconnect() {
   if (await isConnected()) {
     return;
   }
-  const id = await AsyncStorage.getItem(DEVICE_KEY).catch(() => null);
+  const id = await preferences.getItem(preferenceKeys.printerId).catch(() => null);
   if (!id) {
     return;
   }

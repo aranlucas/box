@@ -1,11 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { queryOptions } from '@tanstack/react-query';
 
+import { preferenceKeys, preferences } from './preferences';
 import { api } from './api';
 import { getDeviceId } from './device';
 import { tryReconnect } from './printer';
 
-export const HOUSE_STORAGE_KEY = 'house-id';
 export const houseBoxesKey = (houseId: string) => ['boxes', houseId] as const;
 /** How often a screen showing the house's printers asks again. */
 export const PRINTERS_POLL_MS = 5000;
@@ -16,7 +15,7 @@ export const queries = {
   savedHouse: () =>
     queryOptions({
       queryKey: ['saved-house'],
-      queryFn: () => AsyncStorage.getItem(HOUSE_STORAGE_KEY).catch(() => null),
+      queryFn: () => preferences.getItem(preferenceKeys.houseId).catch(() => null),
       staleTime: Infinity,
       networkMode: 'always',
     }),
@@ -37,7 +36,7 @@ export const queries = {
   legacyKey: () =>
     queryOptions({
       queryKey: ['legacy-household-key'],
-      queryFn: () => AsyncStorage.getItem('household-key').catch(() => null),
+      queryFn: () => preferences.getItem(preferenceKeys.legacyHouseholdKey).catch(() => null),
       staleTime: Infinity,
       networkMode: 'always',
     }),

@@ -1,10 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDbClient } from '@tanstack/react-db';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { preferenceKeys, preferences } from './preferences';
 import type { House, User } from './api';
 import { signIn as platformSignIn, signOut as platformSignOut } from './auth';
-import { HOUSE_STORAGE_KEY, queries } from './queries';
+import { queries } from './queries';
 
 export type Session =
   | { status: 'loading' }
@@ -43,7 +43,7 @@ export function useSetHouse() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await AsyncStorage.setItem(HOUSE_STORAGE_KEY, id).catch(() => {});
+      await preferences.setItem(preferenceKeys.houseId, id).catch(() => {});
       return id;
     },
     onSuccess: (id) => qc.setQueryData(queries.savedHouse().queryKey, id),
@@ -65,7 +65,7 @@ export function useSignOut() {
   return useMutation({
     mutationFn: async () => {
       await platformSignOut();
-      await AsyncStorage.removeItem(HOUSE_STORAGE_KEY).catch(() => {});
+      await preferences.removeItem(preferenceKeys.houseId).catch(() => {});
     },
     onSuccess: async () => {
       qc.clear();

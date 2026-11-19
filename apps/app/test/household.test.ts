@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { api } from '../src/lib/api';
 import { queryClient } from '../src/lib/query';
 
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: {} }));
+vi.mock('../src/lib/preferences', () => ({ preferenceKeys: {}, preferences: {} }));
 vi.mock('expo-keep-awake', () => ({
   activateKeepAwakeAsync: vi.fn().mockResolvedValue(undefined),
   deactivateKeepAwake: vi.fn().mockResolvedValue(undefined),
