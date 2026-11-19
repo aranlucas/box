@@ -17,9 +17,10 @@ export async function checkD30Media(
   let cover: 'open' | 'closed' | undefined;
   let paper: 'out' | 'loaded' | undefined;
   let available = true;
-  let wake = () => {};
+  let wake: (() => void) | undefined;
   let stop: Awaited<ReturnType<SubscribeToMediaStatus>> | undefined;
-  const finished = () => !available || cover === 'open' || (cover !== undefined && paper !== undefined);
+  const finished = () =>
+    !available || cover === 'open' || (cover !== undefined && paper !== undefined);
 
   try {
     stop = await subscribe((packet) => {
@@ -30,20 +31,37 @@ export async function checkD30Media(
           const type = packet[offset + 1];
           const value = packet[offset + 2];
           // The T02 and M02X captures agree on the cover bit. D30 hardware verification is pending.
-          if (type === 0x05 && value === 0x98) cover = 'closed';
-          if (type === 0x05 && value === 0x99) cover = 'open';
-          if (type === 0x06 && value === 0x88) paper = 'out';
-          if (type === 0x06 && value === 0x89) paper = 'loaded';
-          if (type !== 0x05 && type !== 0x06) break;
+          if (type === 0x05 && value === 0x98) {
+            cover = 'closed';
+          }
+          if (type === 0x05 && value === 0x99) {
+            cover = 'open';
+          }
+          if (type === 0x06 && value === 0x88) {
+            paper = 'out';
+          }
+          if (type === 0x06 && value === 0x89) {
+            paper = 'loaded';
+          }
+          if (type !== 0x05 && type !== 0x06) {
+            break;
+          }
         }
       }
-      if (finished()) wake();
+      if (finished()) {
+        wake?.();
+      }
     });
 
     // Retry unanswered queries once in case the native monitor was still being enabled.
+    // oxlint-disable no-await-in-loop -- Each retry depends on the replies from the previous attempt.
     for (let attempt = 0; attempt < 2 && !finished(); attempt++) {
-      if (cover === undefined) await write(COVER_QUERY);
-      if (!finished() && paper === undefined) await write(PAPER_QUERY);
+      if (cover === undefined) {
+        await write(COVER_QUERY);
+      }
+      if (!finished() && paper === undefined) {
+        await write(PAPER_QUERY);
+      }
       if (!finished()) {
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, STATUS_REPLY_MS);
@@ -54,6 +72,7 @@ export async function checkD30Media(
         });
       }
     }
+    // oxlint-enable no-await-in-loop
   } catch {
     // Some firmware does not support status queries. Continue with any replies already received.
   } finally {
@@ -64,6 +83,10 @@ export async function checkD30Media(
     }
   }
 
-  if (cover === 'open') throw new Error('Close the printer cover, then try again.');
-  if (paper === 'out') throw new Error('The printer is out of labels. Load a roll, then try again.');
+  if (cover === 'open') {
+    throw new Error('Close the printer cover, then try again.');
+  }
+  if (paper === 'out') {
+    throw new Error('The printer is out of labels. Load a roll, then try again.');
+  }
 }

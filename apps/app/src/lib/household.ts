@@ -37,10 +37,15 @@ const KEEP_AWAKE_TAG = 'household-printer';
 let awake = false;
 store.subscribe(() => {
   const { sharing } = store.get();
-  if (sharing === awake) return;
+  if (sharing === awake) {
+    return;
+  }
   awake = sharing;
-  if (sharing) activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-  else deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+  if (sharing) {
+    activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+  } else {
+    deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+  }
 });
 
 // One print at a time on this device, so a relayed job and a local tap never interleave chunks.
@@ -73,9 +78,11 @@ let lastListAt = 0;
 
 /** Start sharing/polling. Call once at app start; safe to call again. */
 export function startHousehold() {
-  if (started) return;
+  if (started) {
+    return;
+  }
   started = true;
-  getDeviceId().then((deviceId) => store.set({ deviceId }));
+  void getDeviceId().then((deviceId) => store.set({ deviceId }));
   AppState.addEventListener('change', refreshHousehold);
   // React right away when the local printer connects or disconnects.
   let wasReady = localReady();
@@ -90,14 +97,18 @@ export function startHousehold() {
 
 /** Follow the session's current house. Call whenever it changes (null when signed out). */
 export function setHouseholdHouse(houseId: string | null) {
-  if (store.get().houseId === houseId) return;
+  if (store.get().houseId === houseId) {
+    return;
+  }
   store.set({ houseId, printers: [] });
   refreshHousehold();
 }
 
 /** Run a tick now (e.g. after a failed remote print). */
 export function refreshHousehold() {
-  if (timer) clearTimeout(timer);
+  if (timer) {
+    clearTimeout(timer);
+  }
   timer = null;
   lastListAt = 0;
   void tick();
@@ -118,7 +129,9 @@ async function tick() {
       return;
     }
     const { houseId } = store.get();
-    if (registeredIn && registeredIn !== houseId) await goOffline(); // switched house or signed out
+    if (registeredIn && registeredIn !== houseId) {
+      await goOffline();
+    } // switched house or signed out
     if (!houseId) {
       next = null; // resumed by setHouseholdHouse
       return;
@@ -126,17 +139,28 @@ async function tick() {
     const deviceId = await getDeviceId();
     if (localReady()) {
       next = HEARTBEAT_MS;
-      const jobs = await api.printerHeartbeat(houseId, { deviceId, deviceName: deviceName(), printerName: getPrinterState().name });
+      const jobs = await api.printerHeartbeat(houseId, {
+        deviceId,
+        deviceName: deviceName(),
+        printerName: getPrinterState().name,
+      });
       registeredIn = houseId;
-      if (!store.get().sharing) store.set({ sharing: true });
-      for (const job of jobs) await serve(houseId, job, deviceId);
+      if (!store.get().sharing) {
+        store.set({ sharing: true });
+      }
+      for (const job of jobs) {
+        // oxlint-disable-next-line no-await-in-loop -- This printer handles jobs in order.
+        await serve(houseId, job, deviceId);
+      }
     } else {
       await goOffline();
     }
     if (Date.now() - lastListAt >= LIST_MS) {
       lastListAt = Date.now();
       const printers = await api.listPrinters(houseId);
-      if (store.get().houseId === houseId) store.set({ printers });
+      if (store.get().houseId === houseId) {
+        store.set({ printers });
+      }
     }
   } catch {
     // Network blip: try again next tick.
@@ -146,14 +170,18 @@ async function tick() {
       rerun = false;
       void tick();
     } else if (next !== null) {
-      timer = setTimeout(() => void tick(), next);
+      timer = setTimeout(() => {
+        void tick();
+      }, next);
     }
   }
 }
 
 async function goOffline() {
   const houseId = registeredIn;
-  if (!houseId) return;
+  if (!houseId) {
+    return;
+  }
   registeredIn = null;
   store.set({ sharing: false });
   await api.printerOffline(houseId, await getDeviceId()).catch(() => {});
@@ -161,7 +189,9 @@ async function goOffline() {
 
 /** Print a job relayed from another device. Never scans or opens a picker: only prints if already connected. */
 async function serve(houseId: string, job: QueuedJob, deviceId: string) {
-  if (getPrinterState().status !== 'connected') return; // busy or gone: leave it for another host, or to expire
+  if (getPrinterState().status !== 'connected') {
+    return;
+  } // busy or gone: leave it for another host, or to expire
   try {
     await api.claimPrintJob(houseId, job.id, deviceId);
   } catch {
@@ -171,7 +201,9 @@ async function serve(houseId: string, job: QueuedJob, deviceId: string) {
     await serialized(() => printLabel(job.label, { connect: false, checkMedia: true }));
     await api.completePrintJob(houseId, job.id, deviceId, { ok: true }).catch(() => {});
   } catch (e) {
-    await api.completePrintJob(houseId, job.id, deviceId, { ok: false, error: errMsg(e) }).catch(() => {});
+    await api
+      .completePrintJob(houseId, job.id, deviceId, { ok: false, error: errMsg(e) })
+      .catch(() => {});
   }
 }
 
@@ -183,30 +215,46 @@ async function serve(houseId: string, job: QueuedJob, deviceId: string) {
  * `houseId` is the box's house (defaults to the current one). Resolves with the name of the device
  * that printed it (null = this one).
  */
-export async function printAnywhere(label: RemoteLabel, houseId = store.get().houseId): Promise<{ via: string | null }> {
+export async function printAnywhere(
+  label: RemoteLabel,
+  houseId = store.get().houseId,
+): Promise<{ via: string | null }> {
   const local = getPrinterState().status;
   if (local === 'connected' || local === 'printing') {
     await serialized(() => printLabel(label));
     return { via: null };
   }
   const remoteHere = houseId === store.get().houseId && remotePrinters().length > 0;
-  if (remoteHere || local === 'unsupported') return printRemote(label, houseId);
+  if (remoteHere || local === 'unsupported') {
+    return printRemote(label, houseId);
+  }
   await serialized(() => printLabel(label));
   return { via: null };
 }
 
-async function printRemote(label: RemoteLabel, houseId: string | null): Promise<{ via: string | null }> {
-  if (!houseId) throw new Error('Sign in to print through another device in your house.');
+async function printRemote(
+  label: RemoteLabel,
+  houseId: string | null,
+): Promise<{ via: string | null }> {
+  if (!houseId) {
+    throw new Error('Sign in to print through another device in your house.');
+  }
   try {
     let job = await api.createPrintJob(houseId, await getDeviceId(), label);
     const queuedVia = job.via;
     const deadline = Date.now() + JOB_TIMEOUT_MS;
     while (job.status === 'queued' || job.status === 'printing') {
-      if (Date.now() > deadline) throw new Error('The printer did not respond in time.');
+      if (Date.now() > deadline) {
+        throw new Error('The printer did not respond in time.');
+      }
+      // oxlint-disable-next-line no-await-in-loop -- Wait between status requests.
       await sleep(JOB_POLL_MS);
+      // oxlint-disable-next-line no-await-in-loop -- The next iteration depends on the returned status.
       job = await api.getPrintJob(houseId, job.id);
     }
-    if (job.status === 'failed') throw new Error(job.error ?? 'Printing failed.');
+    if (job.status === 'failed') {
+      throw new Error(job.error ?? 'Printing failed.');
+    }
     return { via: job.via ?? queuedVia };
   } catch (e) {
     refreshHousehold(); // the table was probably stale; update the UI

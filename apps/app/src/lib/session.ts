@@ -10,7 +10,7 @@ export function useSession() {
   const me = useQuery(queries.me());
   const saved = useQuery(queries.savedHouse());
   const houses = me.data?.houses ?? [];
-  const house: House | null = houses.find((h) => h.id === saved.data) ?? houses[0] ?? null;
+  const house: House | null = houses.find((h) => h.id === saved.data) ?? houses.at(0) ?? null;
   return {
     me: me.data ?? null,
     house,
@@ -35,7 +35,9 @@ export function useSignIn() {
   return useMutation({
     mutationFn: (returnTo?: string) => platformSignIn(returnTo),
     onSuccess: (ok) => {
-      if (ok) qc.invalidateQueries({ queryKey: queries.me().queryKey });
+      if (ok) {
+        void qc.invalidateQueries({ queryKey: queries.me().queryKey });
+      }
     },
   });
 }
@@ -49,8 +51,12 @@ export function useSignOut() {
     },
     onSuccess: () => {
       qc.clear();
-      qc.setQueryData(queries.me().queryKey, { user: null, houses: [], legacyHomeClaimable: false });
-      qc.invalidateQueries({ queryKey: queries.me().queryKey });
+      qc.setQueryData(queries.me().queryKey, {
+        user: null,
+        houses: [],
+        legacyHomeClaimable: false,
+      });
+      void qc.invalidateQueries({ queryKey: queries.me().queryKey });
     },
   });
 }

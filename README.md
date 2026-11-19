@@ -22,12 +22,12 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 
 ## Repo layout
 
-| Path | What |
-|-|-|
-| `apps/app` | Expo app. Screens are in `src/app`. The printer transport is `src/lib/printer.ts` (native BLE) or `printer.web.ts` (Web Bluetooth). |
-| `apps/worker` | Cloudflare Worker: the API (`src/index.ts`), AI extraction (`src/ai.ts`), D1 migrations, and `cloudflare.config.ts`. |
-| `packages/label` | Label layout (QR code + bitmap font), the D30 raster encoder, and Web Bluetooth helpers. Unit-tested. |
-| `docs/superpowers/specs` | The design doc, including the reverse-engineered D30 protocol notes. |
+| Path                     | What                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/app`               | Expo app. Screens are in `src/app`. The printer transport is `src/lib/printer.ts` (native BLE) or `printer.web.ts` (Web Bluetooth). |
+| `apps/worker`            | Cloudflare Worker: the API (`src/index.ts`), AI extraction (`src/ai.ts`), D1 migrations, and `cloudflare.config.ts`.                |
+| `packages/label`         | Label layout (QR code + bitmap font), the D30 raster encoder, and Web Bluetooth helpers. Unit-tested.                               |
+| `docs/superpowers/specs` | The design doc, including the reverse-engineered D30 protocol notes.                                                                |
 
 ## How access works
 
@@ -57,7 +57,9 @@ Requires pnpm, Node 24 and the `cf` CLI (signed in).
 
 ```sh
 pnpm install
-pnpm test                                   # label encoder tests
+pnpm lint                                   # workspace lint, including type-aware rules
+pnpm format:check                           # check formatting
+pnpm test                                   # workspace tests
 pnpm --filter app check:expo                 # SDK dependency alignment and Expo Doctor
 
 # Worker (needs apps/worker/.dev.vars with OPENAI_API_KEY and HOUSEHOLD_KEY)
@@ -66,6 +68,8 @@ cd apps/worker && pnpm migrate:local && pnpm dev
 # Web app against a running Worker
 cd apps/app && EXPO_PUBLIC_API_URL=http://localhost:8788 pnpm web
 ```
+
+Run `pnpm lint:fix` to apply automatic lint fixes and `pnpm format` to format the workspace.
 
 For Android development, run `EXPO_PUBLIC_API_URL=http://10.0.2.2:8788 pnpm android` from `apps/app` with the Worker running locally and an emulator connected. The Android build includes the native Bluetooth library required for printing. After changing native dependencies or config plugins, regenerate the Android project with `pnpm exec expo prebuild --platform android --clean` before rebuilding.
 

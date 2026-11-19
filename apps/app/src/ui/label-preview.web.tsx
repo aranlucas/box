@@ -10,12 +10,20 @@ export function LabelPreview({ input, maxWidth = 320 }: { input: LabelInput; max
     canvas.width = LABEL_W;
     canvas.height = LABEL_H;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
+    if (!ctx) {
+      return null;
+    }
     const bmp = renderLabel(input);
-    ctx.putImageData(new ImageData(bitmapToRGBA(bmp) as Uint8ClampedArray<ArrayBuffer>, bmp.width, bmp.height), 0, 0);
+    ctx.putImageData(
+      new ImageData(bitmapToRGBA(bmp) as Uint8ClampedArray<ArrayBuffer>, bmp.width, bmp.height),
+      0,
+      0,
+    );
     return canvas.toDataURL('image/png');
   }, [input]);
-  if (!uri) return null;
+  if (!uri) {
+    return null;
+  }
   return (
     <Image
       source={{ uri }}

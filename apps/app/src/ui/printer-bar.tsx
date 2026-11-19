@@ -9,7 +9,10 @@ import { queries } from '@/lib/queries';
 import { Button, Card, styles } from './components';
 import { colors, radius, space } from './theme';
 
-export function PrinterButton({ availability, onPress }: {
+export function PrinterButton({
+  availability,
+  onPress,
+}: {
   availability: 'ready' | 'setup' | 'unavailable';
   onPress: () => void;
 }) {
@@ -25,9 +28,14 @@ export function PrinterButton({ availability, onPress }: {
       accessibilityRole="button"
       accessibilityLabel={`Printer options, ${statusLabel}`}
       onPress={onPress}
-      style={({ pressed }) => [s.iconButton, pressed && { opacity: 0.6 }]}>
+      style={({ pressed }) => [s.iconButton, pressed && { opacity: 0.6 }]}
+    >
       <SymbolView
-        name={{ ios: available ? 'printer.fill' : 'printer', android: materialSymbol, web: materialSymbol }}
+        name={{
+          ios: available ? 'printer.fill' : 'printer',
+          android: materialSymbol,
+          web: materialSymbol,
+        }}
         tintColor={available ? colors.green : colors.muted}
         size={24}
         aria-hidden
@@ -37,12 +45,22 @@ export function PrinterButton({ availability, onPress }: {
   );
 }
 
-export function PrinterOptions({ visible, houseId, onClose }: { visible: boolean; houseId: string; onClose: () => void }) {
+export function PrinterOptions({
+  visible,
+  houseId,
+  onClose,
+}: {
+  visible: boolean;
+  houseId: string;
+  onClose: () => void;
+}) {
   return (
     <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
       <View style={s.modal}>
         <Card style={s.modalCard}>
-          <Text accessibilityRole="header" style={styles.h2}>Printer</Text>
+          <Text accessibilityRole="header" style={styles.h2}>
+            Printer
+          </Text>
           <PrinterBar houseId={houseId} />
           <Button label="Done" variant="secondary" onPress={onClose} />
         </Card>
@@ -55,27 +73,44 @@ export function PrinterOptions({ visible, houseId, onClose }: { visible: boolean
  * Printer status + connect control. When this device has no printer but another device in the
  * current house does, it offers to print through that one. `showTable` adds the house's printer table.
  */
-export function PrinterBar({ showTable = false, houseId }: { showTable?: boolean; houseId?: string }) {
+export function PrinterBar({
+  showTable = false,
+  houseId,
+}: {
+  showTable?: boolean;
+  houseId?: string;
+}) {
   const state = usePrinter();
   const household = useHousehold();
   useQuery(queries.printerReconnect());
-  const connect = useMutation({ mutationFn: (opts: { acceptAll?: boolean }) => connectPrinter(opts) });
+  const connect = useMutation({
+    mutationFn: (opts: { acceptAll?: boolean }) => connectPrinter(opts),
+  });
 
   const supported = state.status !== 'unsupported';
   const connected = state.status === 'connected' || state.status === 'printing';
   const via =
-    !connected && (houseId === undefined || houseId === household.houseId) ? remotePrinters(household)[0] : undefined;
+    !connected && (houseId === undefined || houseId === household.houseId)
+      ? remotePrinters(household)[0]
+      : undefined;
 
   let chip: { label: string; on: boolean; onPress?: () => void } | null = null;
-  if (state.status === 'connecting') chip = { label: 'Connecting…', on: false };
-  else if (connected)
+  if (state.status === 'connecting') {
+    chip = { label: 'Connecting…', on: false };
+  } else if (connected) {
     chip = {
-      label: state.status === 'printing' ? `Printing on ${state.name ?? 'D30'}…` : `Printer: ${state.name ?? 'D30'}`,
+      label:
+        state.status === 'printing'
+          ? `Printing on ${state.name ?? 'D30'}…`
+          : `Printer: ${state.name ?? 'D30'}`,
       on: true,
       onPress: disconnectPrinter,
     };
-  else if (via) chip = { label: `Print via ${via.device_name}`, on: true };
-  else if (supported) chip = { label: 'Connect printer', on: false, onPress: () => connect.mutate({}) };
+  } else if (via) {
+    chip = { label: `Print via ${via.device_name}`, on: true };
+  } else if (supported) {
+    chip = { label: 'Connect printer', on: false, onPress: () => connect.mutate({}) };
+  }
 
   return (
     <View style={{ gap: space(1) }}>
@@ -85,7 +120,8 @@ export function PrinterBar({ showTable = false, houseId }: { showTable?: boolean
             accessibilityRole={chip.onPress ? 'button' : 'text'}
             disabled={!chip.onPress}
             onPress={chip.onPress}
-            style={[s.chip, chip.on ? s.on : s.off]}>
+            style={[s.chip, chip.on ? s.on : s.off]}
+          >
             <View style={[s.dot, { backgroundColor: chip.on ? colors.green : colors.muted }]} />
             <Text style={s.chipText}>{chip.label}</Text>
           </Pressable>
@@ -133,7 +169,13 @@ function HouseholdTable() {
 
 const s = StyleSheet.create({
   iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
-  modal: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space(4), backgroundColor: 'rgba(29, 26, 22, 0.4)' },
+  modal: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: space(4),
+    backgroundColor: 'rgba(29, 26, 22, 0.4)',
+  },
   modalCard: { width: '100%', maxWidth: 360 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space(3), flexWrap: 'wrap' },
   chip: {
@@ -161,7 +203,13 @@ const s = StyleSheet.create({
     paddingVertical: space(2),
     gap: space(1),
   },
-  tableHead: { fontSize: 12, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  tableHead: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   tableRow: { flexDirection: 'row', alignItems: 'center', gap: space(2), minHeight: 28 },
   tableName: { flex: 1, fontSize: 14, color: colors.ink },
   tableMeta: { fontSize: 13, color: colors.muted },

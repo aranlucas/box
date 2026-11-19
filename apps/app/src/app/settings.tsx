@@ -16,7 +16,9 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const days = (ms: number) => Math.max(1, Math.round((ms - Date.now()) / 86_400_000));
 
 function confirm(title: string, message: string, action: string): Promise<boolean> {
-  if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  if (Platform.OS === 'web') {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
   return new Promise((resolve) =>
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
@@ -35,7 +37,8 @@ export default function SettingsScreen() {
   const people = useQuery(queries.members(house?.id));
   const members = people.data?.members ?? null;
   const invites = people.data?.invites ?? [];
-  const refreshPeople = () => qc.invalidateQueries({ queryKey: queries.members(house?.id).queryKey });
+  const refreshPeople = () =>
+    qc.invalidateQueries({ queryKey: queries.members(house?.id).queryKey });
   const [link, setLink] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setError] = useState<string | null>(null);
@@ -46,12 +49,13 @@ export default function SettingsScreen() {
     mutationFn: () => api.createInvite(house!.id),
     onSuccess: async ({ url }) => {
       setLink(url);
-      refreshPeople();
+      void refreshPeople();
       const message = `Join “${house!.name}” on Moving Boxes: ${url}`;
       if (Platform.OS === 'web') {
         const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
-        if (nav.share) await nav.share({ title: 'Moving Boxes invite', text: message, url }).catch(() => {});
-        else if (nav.clipboard) {
+        if (nav.share) {
+          await nav.share({ title: 'Moving Boxes invite', text: message, url }).catch(() => {});
+        } else if (nav.clipboard) {
           await nav.clipboard.writeText(url);
           setNotice('Invite link copied. It works once and expires in 7 days.');
         }
@@ -72,7 +76,9 @@ export default function SettingsScreen() {
       if (m.user_id === me?.id) {
         await qc.invalidateQueries({ queryKey: queries.me().queryKey });
         router.replace('/');
-      } else refreshPeople();
+      } else {
+        void refreshPeople();
+      }
     },
     onError: (e) => setError(errMsg(e)),
   });
@@ -101,11 +107,7 @@ export default function SettingsScreen() {
   ) : null;
 
   if (!house || !me) {
-    return (
-      <Screen>
-        {account ?? <Banner>Sign in first.</Banner>}
-      </Screen>
-    );
+    return <Screen>{account ?? <Banner>Sign in first.</Banner>}</Screen>;
   }
   const isOwner = house.role === 'owner';
 
@@ -124,10 +126,14 @@ export default function SettingsScreen() {
         : `Remove ${displayName(m) ?? 'this member'} from “${house!.name}”?`,
       self ? 'Leave' : 'Remove',
     );
-    if (ok) removeMut.mutate(m);
+    if (ok) {
+      removeMut.mutate(m);
+    }
   }
 
-  const createHouse = () => void houseForm.handleSubmit(({ name }) => createHouseMut.mutate(name.trim()))();
+  const createHouse = () => {
+    void houseForm.handleSubmit(({ name }) => createHouseMut.mutate(name.trim()))();
+  };
 
   return (
     <Screen>
@@ -155,8 +161,15 @@ export default function SettingsScreen() {
                   <Text style={styles.muted}>{m.role === 'owner' ? 'Owner' : 'Member'}</Text>
                 </View>
                 {isOwner || m.user_id === me.id ? (
-                  <Pressable onPress={() => remove(m)} accessibilityRole="button">
-                    <Text style={{ color: colors.red, fontWeight: '600' }}>{m.user_id === me.id ? 'Leave' : 'Remove'}</Text>
+                  <Pressable
+                    onPress={() => {
+                      void remove(m);
+                    }}
+                    accessibilityRole="button"
+                  >
+                    <Text style={{ color: colors.red, fontWeight: '600' }}>
+                      {m.user_id === me.id ? 'Leave' : 'Remove'}
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -167,7 +180,8 @@ export default function SettingsScreen() {
         <Card>
           <Text style={styles.h2}>Invite someone</Text>
           <Text style={styles.body}>
-            Send a link by text or chat. It works once and expires in 7 days. They’ll sign in, then tap Join.
+            Send a link by text or chat. It works once and expires in 7 days. They’ll sign in, then
+            tap Join.
           </Text>
           <Button label="Create invite link" busy={inviteMut.isPending} onPress={invite} />
           {link ? (
@@ -202,11 +216,16 @@ export default function SettingsScreen() {
       {isOwner ? (
         <Card>
           <Text style={styles.h2}>Another house</Text>
-          <Text style={styles.muted}>For a second home, storage unit or garage. Box numbers start at 1 in each house.</Text>
+          <Text style={styles.muted}>
+            For a second home, storage unit or garage. Box numbers start at 1 in each house.
+          </Text>
           <FormField
             control={houseForm.control}
             name="name"
-            rules={{ validate: (v) => (v.trim().length > 0 && v.trim().length <= 60) || 'Name it in 1–60 characters' }}
+            rules={{
+              validate: (v) =>
+                (v.trim().length > 0 && v.trim().length <= 60) || 'Name it in 1–60 characters',
+            }}
             placeholder="e.g. Storage unit"
             onSubmitEditing={createHouse}
           />
@@ -224,6 +243,18 @@ export default function SettingsScreen() {
 }
 
 const s = StyleSheet.create({
-  kicker: { fontSize: 14, fontWeight: '700', color: colors.kraftDark, textTransform: 'uppercase', letterSpacing: 0.8 },
-  link: { fontSize: 14, color: colors.kraftDark, backgroundColor: colors.kraftSoft, padding: space(2), borderRadius: 8 },
+  kicker: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.kraftDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  link: {
+    fontSize: 14,
+    color: colors.kraftDark,
+    backgroundColor: colors.kraftSoft,
+    padding: space(2),
+    borderRadius: 8,
+  },
 });

@@ -54,11 +54,11 @@ When unpacking, anyone scans the QR code with a phone camera. That opens a page 
 
 ## Approaches considered
 
-| | Approach | Trade-off |
-|-|-|-|
-| A | Expo universal app, web first. Android uses the installable web app and prints over Web Bluetooth. Native build later. | Fastest to a working printer. The native app is deferred. |
+|                | Approach                                                                                                                                 | Trade-off                                                                                               |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| A              | Expo universal app, web first. Android uses the installable web app and prints over Web Bluetooth. Native build later.                   | Fastest to a working printer. The native app is deferred.                                               |
 | **B (chosen)** | **Expo universal app with a native Android build from day one.** It prints over native BLE on Android and over Web Bluetooth on the web. | Two Bluetooth transports, and an APK is needed before Android can print natively. The user picked this. |
-| C | Plain React + Vite web app, no React Native. | Leanest, but the user prefers React Native, and a native app later would mean a rewrite. |
+| C              | Plain React + Vite web app, no React Native.                                                                                             | Leanest, but the user prefers React Native, and a native app later would mean a rewrite.                |
 
 The user chose **B**. They want a real Android app, with the web as a peer.
 
@@ -117,17 +117,18 @@ Search uses `LIKE` over `boxes.title` and `items.name`, which is fine for hundre
 
 ## API (Worker, Hono)
 
-| Method & path | Guard | Purpose |
-|-|-|-|
+| Method & path                        | Guard         | Purpose                                                                                    |
+| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------ |
 | `POST /api/boxes` (multipart: photo) | household key | Create a box: store the photo in R2, run AI extraction, insert box + items, return the box |
-| `GET /api/boxes?q=` | household key | List or search boxes |
-| `GET /api/boxes/:id` | link (ID) | Box + items + photo URLs |
-| `PATCH /api/boxes/:id` | link (ID) | Edit title, room, notes, status |
-| `PUT /api/boxes/:id/items` | link (ID) | Replace the item list (simple and conflict-tolerant enough here) |
-| `POST /api/boxes/:id/photos` | household key | Add a photo. AI extracts and **appends** new items, tagged `ai` |
-| `GET /api/photos/:id` | link (box ID) | Stream the photo from R2 |
+| `GET /api/boxes?q=`                  | household key | List or search boxes                                                                       |
+| `GET /api/boxes/:id`                 | link (ID)     | Box + items + photo URLs                                                                   |
+| `PATCH /api/boxes/:id`               | link (ID)     | Edit title, room, notes, status                                                            |
+| `PUT /api/boxes/:id/items`           | link (ID)     | Replace the item list (simple and conflict-tolerant enough here)                           |
+| `POST /api/boxes/:id/photos`         | household key | Add a photo. AI extracts and **appends** new items, tagged `ai`                            |
+| `GET /api/photos/:id`                | link (box ID) | Stream the photo from R2                                                                   |
 
 **Access (my call; the user approved "open by link").**
+
 - Viewing and editing a single box only needs its unguessable ID.
 - Creating boxes, uploading photos, and listing/searching all boxes require a **household key**. This is a shared secret stored as a Worker secret, entered once per device, and sent as a header.
 - Without the key, anyone could spend the AI budget or enumerate every box.

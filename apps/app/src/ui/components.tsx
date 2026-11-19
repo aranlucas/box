@@ -29,7 +29,13 @@ type ScreenProps = {
   refreshing?: boolean;
 };
 
-export function Screen({ children, scroll = true, safeTop = false, onRefresh, refreshing = false }: ScreenProps) {
+export function Screen({
+  children,
+  scroll = true,
+  safeTop = false,
+  onRefresh,
+  refreshing = false,
+}: ScreenProps) {
   const insets = useSafeAreaInsets();
   const inner = <View style={styles.inner}>{children}</View>;
   const edges = safeTop ? (['top', 'left', 'right'] as const) : (['left', 'right'] as const);
@@ -44,9 +50,15 @@ export function Screen({ children, scroll = true, safeTop = false, onRefresh, re
           automaticallyAdjustKeyboardInsets
           refreshControl={
             onRefresh ? (
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.kraft} colors={[colors.kraft]} />
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={colors.kraft}
+                colors={[colors.kraft]}
+              />
             ) : undefined
-          }>
+          }
+        >
           {inner}
         </ScrollView>
       ) : (
@@ -66,25 +78,36 @@ type ButtonProps = {
   style?: ViewStyle;
 };
 
-export function Button({ label, onPress, variant = 'primary', busy, disabled, big, style }: ButtonProps) {
+export function Button({
+  label,
+  onPress,
+  variant = 'primary',
+  busy,
+  disabled,
+  big,
+  style,
+}: ButtonProps) {
   const v = buttonVariants[variant];
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
-      disabled={disabled || busy}
+      disabled={!!disabled || !!busy}
       style={({ pressed }) => [
         styles.button,
         big && styles.buttonBig,
         { backgroundColor: v.bg, borderColor: v.border },
-        (disabled || busy) && { opacity: 0.5 },
+        (!!disabled || !!busy) && { opacity: 0.5 },
         pressed && { opacity: 0.8 },
         style,
-      ]}>
+      ]}
+    >
       {busy ? (
         <ActivityIndicator color={v.fg} />
       ) : (
-        <Text style={[styles.buttonText, big && styles.buttonTextBig, { color: v.fg }]}>{label}</Text>
+        <Text style={[styles.buttonText, big && styles.buttonTextBig, { color: v.fg }]}>
+          {label}
+        </Text>
       )}
     </Pressable>
   );
@@ -111,8 +134,15 @@ export function Card({ children, style }: { children: ReactNode; style?: ViewSty
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-export function Banner({ tone = 'info', children }: { tone?: 'info' | 'error' | 'success'; children: ReactNode }) {
-  const bg = tone === 'error' ? colors.redSoft : tone === 'success' ? colors.greenSoft : colors.kraftSoft;
+export function Banner({
+  tone = 'info',
+  children,
+}: {
+  tone?: 'info' | 'error' | 'success';
+  children: ReactNode;
+}) {
+  const bg =
+    tone === 'error' ? colors.redSoft : tone === 'success' ? colors.greenSoft : colors.kraftSoft;
   const fg = tone === 'error' ? colors.red : tone === 'success' ? colors.green : colors.kraftDark;
   return (
     <View style={[styles.banner, { backgroundColor: bg }]}>
@@ -124,7 +154,14 @@ export function Banner({ tone = 'info', children }: { tone?: 'info' | 'error' | 
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   scroll: { flexGrow: 1 },
-  inner: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', padding: space(4), gap: space(4), flexGrow: 1 },
+  inner: {
+    width: '100%',
+    maxWidth: MAX_WIDTH,
+    alignSelf: 'center',
+    padding: space(4),
+    gap: space(4),
+    flexGrow: 1,
+  },
   button: {
     minHeight: 48,
     paddingHorizontal: space(5),
@@ -136,7 +173,13 @@ export const styles = StyleSheet.create({
   buttonBig: { minHeight: 64, borderRadius: radius.lg },
   buttonText: { fontSize: 16, fontWeight: '600' },
   buttonTextBig: { fontSize: 19, fontWeight: '700' },
-  label: { fontSize: 13, fontWeight: '600', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   input: {
     minHeight: 48,
     borderWidth: 1,
