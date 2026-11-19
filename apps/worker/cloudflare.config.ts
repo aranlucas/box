@@ -12,10 +12,11 @@ export default defineConfig({
     observability: { enabled: true },
     entrypoint,
     assets: {
-      notFoundHandling: 'single-page-application',
+      notFoundHandling: 'none',
       runWorkerFirst: ['/api/*', '/B/*', '/auth/*'],
     },
     env: {
+      ASSETS: bindings.assets(),
       DB: bindings.d1({ id: '52c32efc-6ee3-48d8-8b4e-f41ad071a511', name: 'moving-boxes' }),
       PHOTOS: bindings.r2({ name: 'moving-box-photos' }),
       OPENAI_MODEL: bindings.text('gpt-5.1'),
