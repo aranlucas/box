@@ -59,7 +59,7 @@ function Invite({
       </Text>
       <Card>
         <Text style={styles.body}>
-          {info.inviter_name ?? 'Someone'} invited you to their moving boxes. Members can add,
+          {info.inviter_name ?? 'Someone'} invited you to join their house on Box. Members can add,
           search and print boxes for this house.
         </Text>
         {info.status === 'valid' ? null : <Banner tone="error">{UNUSABLE[info.status]}</Banner>}

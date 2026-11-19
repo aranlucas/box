@@ -131,7 +131,7 @@
   - `s256('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk') === 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'` (RFC 7636 vector).
   - `verifyIdToken` uses a local `jose` key pair with `createLocalJWKSet`. It accepts a token with the right `iss`, `aud` and `nonce`, and rejects a wrong `aud`, a wrong `nonce` and an expired token.
   - `exchangeCode` sends a Basic auth header and a form body containing `code_verifier`, checked with a stub `fetchImpl`.
-- [ ] **Step 2: Run `pnpm --filter worker test`.** Expected: FAIL, because the modules don't exist yet.
+- [ ] **Step 2: Run `pnpm --filter @box/worker test`.** Expected: FAIL, because the modules don't exist yet.
 - [ ] **Step 3: Implement `util.ts`, `oidc.ts`, `session.ts` and `routes.ts`.**
   - The callback upserts `users` on `auth_sub`.
   - Web: set the cookie and redirect to `return_to`.
@@ -200,7 +200,7 @@
   - `useSession(): {me: Me | null; loading: boolean; house: House | null; setHouse(id): void; refresh(): Promise<void>}`
   - The current house id is stored in AsyncStorage under `house-id`. It defaults to the first house.
 
-- [ ] **Step 1: Implement and run `pnpm --filter app typecheck`.** Expected: no errors.
+- [ ] **Step 1: Implement and run `pnpm --filter @box/app typecheck`.** Expected: no errors.
 - [ ] **Step 2: Commit** with the message `feat(app): sign-in via auth service, session and house context`.
 
 ### Task 5: App screens (first run, claim, house and members, invites, switcher, box editing)
@@ -233,7 +233,7 @@
 **Files:** none new.
 
 - [ ] **Step 1: Back up the remote D1** with `cf d1 export` (or the matching command) to the scratchpad. Expected: an SQL file containing today's boxes.
-- [ ] **Step 2: Apply remote migrations** with `pnpm --filter worker migrate`, then check that box, item and photo counts are unchanged and every box has `house_id='HOME0000'`.
+- [ ] **Step 2: Apply remote migrations** with `pnpm --filter @box/worker migrate`, then check that box, item and photo counts are unchanged and every box has `house_id='HOME0000'`.
 - [ ] **Step 3: Run `pnpm run deploy`.** It uploads secrets from `.dev.vars`, now including `AUTH_CLIENT_*`.
   - Smoke test: `/auth/login` returns 302 to the Auth authorize URL with `client_id`, `code_challenge` and the exact `redirect_uri`.
   - `/api/me` returns `{user:null}`.

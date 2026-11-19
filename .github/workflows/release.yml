@@ -33,7 +33,7 @@ jobs:
     uses: ./.github/workflows/android.yml
     with:
       ref: ${{ needs.release-please.outputs.tag }}
-      apk-name: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+      apk-name: box-${{ needs.release-please.outputs.tag }}-arm64.apk
 
   publish:
     needs: [release-please, apk]
@@ -43,9 +43,9 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+          name: box-${{ needs.release-please.outputs.tag }}-arm64.apk
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release-please.outputs.tag }}
-          files: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+          files: box-${{ needs.release-please.outputs.tag }}-arm64.apk
           fail_on_unmatched_files: true

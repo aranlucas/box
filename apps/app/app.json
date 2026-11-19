@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Boxes",
-    "slug": "moving-boxes",
+    "name": "Box",
+    "slug": "box",
     "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,8 +26,8 @@
     "web": {
       "output": "single",
       "favicon": "./assets/images/favicon.png",
-      "name": "Boxes",
-      "shortName": "Boxes",
+      "name": "Box",
+      "shortName": "Box",
       "themeColor": "#F3EDE3",
       "backgroundColor": "#F3EDE3"
     },

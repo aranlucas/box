@@ -78,14 +78,16 @@ function SignedOut({ error }: { error?: string }) {
   const problem = signIn.error?.message ?? error;
   return (
     <Screen safeTop>
-      <View style={s.brand}>
-        <Mark />
-        <Text style={styles.h1} accessibilityRole="header">
-          Moving boxes
-        </Text>
-      </View>
-      <Card>
-        <Text style={styles.body}>Sign in to pack, print and search your household’s boxes.</Text>
+      <View style={s.welcome}>
+        <View style={s.welcomeHeader}>
+          <Mark size={88} />
+          <Text style={s.welcomeTitle} accessibilityRole="header">
+            Box
+          </Text>
+          <Text style={s.welcomeDescription}>
+            Photograph what you pack. Find it when you unpack.
+          </Text>
+        </View>
         {problem ? <Banner tone="error">{problem}</Banner> : null}
         <Button
           label="Sign in"
@@ -94,10 +96,10 @@ function SignedOut({ error }: { error?: string }) {
             signIn.mutate('/');
           }}
         />
-      </Card>
-      <Text style={styles.muted}>
-        Just unpacking? Scan the QR code on a box with your phone camera — no sign-in needed.
-      </Text>
+        <Text style={[styles.muted, styles.center]}>
+          Scan a label with your phone camera to see what’s inside, even when you’re signed out.
+        </Text>
+      </View>
     </Screen>
   );
 }
@@ -361,6 +363,21 @@ function BoxRow({ box }: { box: BoxSummary }) {
 }
 
 const s = StyleSheet.create({
+  welcome: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    marginVertical: space(4),
+    gap: space(4),
+    padding: space(5),
+    backgroundColor: colors.card,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+  },
+  welcomeHeader: { alignItems: 'center', gap: space(2), paddingVertical: space(4) },
+  welcomeTitle: { color: colors.ink, fontSize: 48, fontWeight: '800', letterSpacing: -2 },
+  welcomeDescription: { ...styles.body, textAlign: 'center' },
   header: { gap: space(4) },
   brand: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
   actions: { flexDirection: 'row', alignItems: 'center' },

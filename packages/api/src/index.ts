@@ -1,6 +1,6 @@
 // The JSON the Worker sends and the app reads. Types only: both sides import from here, so a
 // change to a response shape fails the typecheck on whichever side was not updated.
-import type { LabelInput } from '@mj/label';
+import type { LabelInput } from '@box/label';
 
 export type BoxStatus = 'packed' | 'unpacked';
 export type Item = { id: string; name: string; quantity: number | null; source: 'ai' | 'manual' };

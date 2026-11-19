@@ -12,7 +12,7 @@ import { focusManager, skipToken, useQuery } from '@tanstack/react-query';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useSyncExternalStore } from 'react';
 
-import type { LabelInput } from '@mj/label';
+import type { LabelInput } from '@box/label';
 
 import { api, type HouseholdPrinter, type QueuedJob } from './api';
 import { deviceName, getDeviceId } from './device';

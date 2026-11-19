@@ -223,10 +223,10 @@ importers:
       '@legendapp/list':
         specifier: 3.7.3
         version: 3.7.3(react-dom@19.3.0(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
-      '@mj/api':
+      '@box/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@mj/label':
+      '@box/label':
         specifier: workspace:*
         version: link:../../packages/label
       '@react-native-async-storage/async-storage':
@@ -368,10 +368,10 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.144(zod@4.6.7)
-      '@mj/api':
+      '@box/api':
         specifier: workspace:*
         version: link:../../packages/api
-      '@mj/label':
+      '@box/label':
         specifier: workspace:*
         version: link:../../packages/label
       ai:
@@ -408,7 +408,7 @@ importers:
 
   packages/api:
     dependencies:
-      '@mj/label':
+      '@box/label':
         specifier: workspace:*
         version: link:../label
 

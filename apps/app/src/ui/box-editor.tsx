@@ -1,4 +1,4 @@
-import { titleLayout } from '@mj/label';
+import { titleLayout } from '@box/label';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router, Stack } from 'expo-router';
 import { useState } from 'react';

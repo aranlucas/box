@@ -36,7 +36,7 @@ jobs:
           cache: true
           require-lockfile: true
       - name: Build APK
-        run: pnpm --filter app build:android
+        run: pnpm --filter @box/app build:android
         env:
           # Gradle project property: phones only, as in earlier releases.
           ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a

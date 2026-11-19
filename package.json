@@ -1,19 +1,19 @@
 {
-  "name": "moving-journey",
+  "name": "box",
   "private": true,
   "packageManager": "pnpm@12.21.0",
   "scripts": {
     "prepare": "husky",
     "check:pr-title": "commitlint",
-    "lint": "pnpm --filter worker types && oxlint --deny-warnings",
+    "lint": "pnpm --filter @box/worker types && oxlint --deny-warnings",
     "lint:fix": "pnpm lint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
-    "build:web": "pnpm --filter app export:web",
-    "deploy": "pnpm build:web && pnpm --filter worker exec cf deploy --secrets-file .dev.vars"
+    "build:web": "pnpm --filter @box/app export:web",
+    "deploy": "pnpm build:web && pnpm --filter @box/worker exec cf deploy --secrets-file .dev.vars"
   },
   "commitlint": {
     "extends": [

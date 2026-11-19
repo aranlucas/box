@@ -105,7 +105,7 @@ describe('renderLabel', () => {
 
   it.each([
     ['https://bx.aranlucas.workers.dev/b/K7Q2M9P4', 2, 33],
-    ['https://moving-journey.example.workers.dev/b/K7Q2M9P4', 2, 37],
+    ['https://box-inventory.example.workers.dev/b/K7Q2M9P4', 2, 37],
     ['https://bx.co/b/K7Q2M9P4', 3, 21],
   ])('leaves a four-module quiet zone around %s', (url, dotsPerModule, modules) => {
     const bmp = renderLabel({ ...input, url });

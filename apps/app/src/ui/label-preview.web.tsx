@@ -1,4 +1,4 @@
-import { bitmapToRGBA, renderLabel, type LabelInput } from '@mj/label';
+import { bitmapToRGBA, renderLabel, type LabelInput } from '@box/label';
 import { useMemo } from 'react';
 import { Image, type ImageStyle } from 'react-native';
 

@@ -155,7 +155,7 @@ function People({ house, me, members }: { house: House; me: User; members: Membe
 
 /** Hands the invite link to the system share sheet; where there is none, copies it instead. Resolves true if it was copied. */
 async function shareInvite(house: House, url: string): Promise<boolean> {
-  const message = `Join “${house.name}” on Moving Boxes: ${url}`;
+  const message = `Join “${house.name}” on Box: ${url}`;
   if (Platform.OS !== 'web') {
     await Share.share({ message });
     return false;
@@ -164,7 +164,7 @@ async function shareInvite(house: House, url: string): Promise<boolean> {
   // Desktop Firefox has no share sheet.
   if ('share' in navigator) {
     // Closing the share sheet rejects; that is not a failure.
-    await navigator.share({ title: 'Moving Boxes invite', text: message, url }).catch(() => {});
+    await navigator.share({ title: 'Box invite', text: message, url }).catch(() => {});
     return false;
   }
   await clipboard.writeText(url);

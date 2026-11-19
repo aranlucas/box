@@ -1,5 +1,5 @@
 import { LegendList, type LegendListRenderItemProps } from '@legendapp/list/react-native';
-import type { BoxRow } from '@mj/api';
+import type { BoxRow } from '@box/api';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import {

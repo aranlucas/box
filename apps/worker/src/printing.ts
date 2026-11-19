@@ -6,8 +6,8 @@
 // it until the host claims, prints and completes it. Everything is plain D1: no sockets, no cron.
 //
 // Every route runs behind requireHouse (x-house-id), and every query is scoped to that house.
-import type { HouseholdPrinter, PrintJob, PrintJobStatus, QueuedJob } from '@mj/api';
-import type { LabelInput } from '@mj/label';
+import type { HouseholdPrinter, PrintJob, PrintJobStatus, QueuedJob } from '@box/api';
+import type { LabelInput } from '@box/label';
 import { env } from 'cloudflare:workers';
 import { Hono } from 'hono';
 import { z } from 'zod';

@@ -1,4 +1,4 @@
-import { renderLabel, setBit, type Bitmap, type LabelInput } from '@mj/label';
+import { renderLabel, setBit, type Bitmap, type LabelInput } from '@box/label';
 import { useMemo } from 'react';
 import { Image } from 'react-native';
 

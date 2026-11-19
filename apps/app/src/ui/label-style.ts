@@ -1,4 +1,4 @@
-import { LABEL_H, LABEL_W } from '@mj/label';
+import { LABEL_H, LABEL_W } from '@box/label';
 import type { ImageStyle } from 'react-native';
 
 import { colors } from './theme';

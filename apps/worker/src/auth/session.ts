@@ -1,4 +1,4 @@
-import type { User } from '@mj/api';
+import type { User } from '@box/api';
 import { env } from 'cloudflare:workers';
 import type { Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';

@@ -1,5 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
-import type { BoxSummary } from '@mj/api';
+import type { BoxSummary } from '@box/api';
 import { cosineSimilarity, embedMany } from 'ai';
 
 const MODEL = 'text-embedding-3-small';

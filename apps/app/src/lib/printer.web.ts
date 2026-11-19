@@ -1,10 +1,10 @@
-import { buildJob, type LabelInput, type Rotation } from '@mj/label';
+import { buildJob, type LabelInput, type Rotation } from '@box/label';
 import {
   connectD30,
   isWebBluetoothAvailable,
   reconnect,
   type D30Connection,
-} from '@mj/label/webBluetooth';
+} from '@box/label/webBluetooth';
 
 import { createStore, type PrinterState } from './store';
 import { errorMessage } from './util';

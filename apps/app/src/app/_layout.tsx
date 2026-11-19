@@ -33,7 +33,7 @@ export default function RootLayout() {
           <HouseholdSync />
           <StatusBar style="dark" />
           <Stack screenOptions={screenOptions}>
-            <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
+            <Stack.Screen name="index" options={{ title: 'Box', headerShown: false }} />
             <Stack.Screen name="new" options={{ title: 'New box' }} />
             <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
             <Stack.Screen name="settings" options={{ title: 'Settings' }} />

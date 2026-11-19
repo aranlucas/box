@@ -1,6 +1,6 @@
 // Native (Android) printer: Phomemo D30 over BLE via react-native-ble-plx.
-// Same print job bytes as the web build (from @mj/label); only the transport differs.
-import { buildJob, checkD30Media, chunks, type LabelInput, type Rotation } from '@mj/label';
+// Same print job bytes as the web build (from @box/label); only the transport differs.
+import { buildJob, checkD30Media, chunks, type LabelInput, type Rotation } from '@box/label';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, State, type Device } from 'react-native-ble-plx';
 

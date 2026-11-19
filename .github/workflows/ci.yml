@@ -27,11 +27,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - name: Expo SDK versions
-        run: pnpm --filter app exec expo install --check
+        run: pnpm --filter @box/app exec expo install --check
       - name: Web export
         run: pnpm build:web
 
   android:
     uses: ./.github/workflows/android.yml
     with:
-      apk-name: moving-boxes-${{ github.sha }}-arm64.apk
+      apk-name: box-${{ github.sha }}-arm64.apk

@@ -1,4 +1,4 @@
-import type { House, InviteInfo, InviteStatus, Me, Member, PendingInvite, Role } from '@mj/api';
+import type { House, InviteInfo, InviteStatus, Me, Member, PendingInvite, Role } from '@box/api';
 import { env } from 'cloudflare:workers';
 import { Hono, type Context } from 'hono';
 import { createMiddleware } from 'hono/factory';

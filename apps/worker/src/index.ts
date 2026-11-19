@@ -1,4 +1,4 @@
-import type { Box, BoxRow, BoxStatus, Item, Photo } from '@mj/api';
+import type { Box, BoxRow, BoxStatus, Item, Photo } from '@box/api';
 import { env } from 'cloudflare:workers';
 import { Hono, type Context } from 'hono';
 import { createMiddleware } from 'hono/factory';

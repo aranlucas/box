@@ -1,6 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, Output } from 'ai';
-import { titleLayout } from '@mj/label';
+import { titleLayout } from '@box/label';
 import { z } from 'zod';
 
 /** Max title length; set by the label's text budget (2 lines × ~14 chars, uppercase). */

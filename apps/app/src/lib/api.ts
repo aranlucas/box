@@ -11,13 +11,13 @@ import type {
   PendingInvite,
   PrintJob,
   QueuedJob,
-} from '@mj/api';
-import type { LabelInput } from '@mj/label';
+} from '@box/api';
+import type { LabelInput } from '@box/label';
 
 import { authHeader } from './auth';
 import { API_BASE, publicOrigin } from './config';
 
-export type * from '@mj/api';
+export type * from '@box/api';
 
 /** Best label for a person; undefined when the auth service gave us neither name nor email. */
 export const displayName = (person: { name: string | null; email: string | null }) =>
@@ -39,7 +39,7 @@ export class ApiError extends Error {
 export const isApiError = (error: unknown, status: number) =>
   error instanceof ApiError && error.status === status;
 
-/** The parsed body of an API response. `T` is the Worker's response type from @mj/api. */
+/** The parsed body of an API response. `T` is the Worker's response type from @box/api. */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(await authHeader())) {
