@@ -9,6 +9,7 @@ import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
+import { PrinterBar } from '@/ui/printer-bar';
 import { colors, space } from '@/ui/theme';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -192,6 +193,11 @@ export default function SettingsScreen() {
           ) : null}
         </Card>
       ) : null}
+
+      <Card>
+        <Text style={styles.h2}>Printer</Text>
+        <PrinterBar showTable />
+      </Card>
 
       {isOwner ? (
         <Card>

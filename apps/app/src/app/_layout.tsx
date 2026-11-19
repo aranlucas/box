@@ -1,4 +1,4 @@
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
 import { Platform } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { setHouseholdHouse, startHousehold } from '@/lib/household';
+import { queries } from '@/lib/queries';
 import { queryClient } from '@/lib/query';
 import { useSession } from '@/lib/session';
 import { colors } from '@/ui/theme';
@@ -44,9 +45,13 @@ export default function RootLayout() {
   );
 }
 
-/** Keep printer sharing pointed at the house this device is looking at. */
+/**
+ * Keep printer sharing pointed at the house this device is looking at, and reconnect the last-used
+ * printer once at app start (whatever screen opens first) so a shared printer keeps serving the house.
+ */
 function HouseholdSync() {
   const { house } = useSession();
+  useQuery(queries.printerReconnect());
   const houseId = house?.id ?? null;
   useEffect(() => setHouseholdHouse(houseId), [houseId]);
   return null;

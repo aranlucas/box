@@ -9,7 +9,6 @@ import { queries } from '@/lib/queries';
 import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
-import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -154,7 +153,6 @@ function Boxes() {
           ))}
         </View>
       ) : null}
-      <PrinterBar showTable />
       <Button label="＋  New box" big onPress={() => router.push({ pathname: '/new', params: { house: house.id } })} />
       <Field
         value={q}
