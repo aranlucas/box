@@ -26,7 +26,7 @@ export function authorizeUrl(p: { state: string; nonce: string; challenge: strin
 export async function exchangeCode(
   p: { code: string; verifier: string; clientId: string; clientSecret: string },
   fetchImpl: typeof fetch = fetch,
-): Promise<{ id_token: string }> {
+): Promise<{ id_token: string; access_token?: string; scope?: string }> {
   const res = await fetchImpl(`${ISSUER}/oauth2/token`, {
     method: "POST",
     headers: {
@@ -43,15 +43,51 @@ export async function exchangeCode(
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Token exchange failed (${res.status}): ${text.slice(0, 200)}`);
-  const body = JSON.parse(text) as { id_token?: string };
+  const body = JSON.parse(text) as { id_token?: string; access_token?: string; scope?: string };
   if (!body.id_token) throw new Error("Token response had no id_token");
-  return { id_token: body.id_token };
+  return { id_token: body.id_token, access_token: body.access_token, scope: body.scope };
+}
+
+export type Identity = { sub: string; email?: string; name?: string };
+
+/**
+ * The auth service leaves name/email out of the ID token, so ask its userinfo endpoint.
+ * Best effort: any failure (or a userinfo response for a different subject) just keeps `identity`.
+ */
+export async function withUserInfo(
+  identity: Identity,
+  accessToken: string | undefined,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Identity> {
+  if (!accessToken || (identity.name && identity.email)) return identity;
+  try {
+    const res = await fetchImpl(`${ISSUER}/oauth2/userinfo`, {
+      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+    });
+    if (!res.ok) {
+      console.warn(`userinfo failed (${res.status})`);
+      return identity;
+    }
+    const info = (await res.json()) as Record<string, unknown>;
+    if (info.sub !== identity.sub) {
+      console.warn("userinfo subject mismatch; ignoring");
+      return identity;
+    }
+    const out = { ...identity };
+    if (!out.email && typeof info.email === "string" && info.email) out.email = info.email;
+    if (!out.name && typeof info.name === "string" && info.name) out.name = info.name;
+    if (!out.name || !out.email) console.warn(`userinfo missing name/email; claims: ${Object.keys(info).join(",")}`);
+    return out;
+  } catch (err) {
+    console.warn(`userinfo error: ${err instanceof Error ? err.message : String(err)}`);
+    return identity;
+  }
 }
 
 export async function verifyIdToken(
   idToken: string,
   p: { clientId: string; nonce: string; jwks?: JWTVerifyGetKey },
-): Promise<{ sub: string; email?: string; name?: string }> {
+): Promise<Identity> {
   const jwks = p.jwks ?? (remoteJwks ??= createRemoteJWKSet(new URL(`${ISSUER}/jwks`)));
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer: ISSUER,
@@ -61,7 +97,7 @@ export async function verifyIdToken(
   });
   if (payload.nonce !== p.nonce) throw new Error("ID token nonce mismatch");
   if (!payload.sub) throw new Error("ID token has no subject");
-  const out: { sub: string; email?: string; name?: string } = { sub: payload.sub };
+  const out: Identity = { sub: payload.sub };
   if (typeof payload.email === "string") out.email = payload.email;
   if (typeof payload.name === "string") out.name = payload.name;
   return out;

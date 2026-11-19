@@ -2,7 +2,7 @@ import { env } from "cloudflare:workers";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { allow, randomToken, s256, safeReturnPath, sha256Hex } from "../util.ts";
-import { authorizeUrl, exchangeCode, verifyIdToken } from "./oidc.ts";
+import { authorizeUrl, exchangeCode, verifyIdToken, withUserInfo, type Identity } from "./oidc.ts";
 import { createSession, endSession, setSessionCookie } from "./session.ts";
 
 const REQUEST_TTL = 10 * 60 * 1000;
@@ -18,7 +18,7 @@ export const authRoutes = new Hono();
 async function upsertUser(sub: string, email: string | null, name: string | null): Promise<string> {
   const row = await env.DB.prepare(
     `INSERT INTO users (id, auth_sub, email, name, created_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(auth_sub) DO UPDATE SET email = excluded.email, name = excluded.name
+     ON CONFLICT(auth_sub) DO UPDATE SET email = COALESCE(excluded.email, users.email), name = COALESCE(excluded.name, users.name)
      RETURNING id`,
   )
     .bind(randomToken(12), sub, email, name, Date.now())
@@ -67,20 +67,24 @@ authRoutes.get("/auth/callback", async (c) => {
   const code = c.req.query("code");
   if (!code) return fail("missing_code");
 
-  let identity: { sub: string; email?: string; name?: string };
+  let identity: Identity;
+  let accessToken: string | undefined;
   try {
-    const { id_token } = await exchangeCode({
+    const { id_token, access_token, scope } = await exchangeCode({
       code,
       verifier: req.verifier,
       clientId: env.AUTH_CLIENT_ID,
       clientSecret: env.AUTH_CLIENT_SECRET,
     });
     identity = await verifyIdToken(id_token, { clientId: env.AUTH_CLIENT_ID, nonce: req.nonce });
+    accessToken = access_token;
+    if (!identity.name || !identity.email) console.log(`ID token lacks name/email; granted scope: ${scope ?? "(none)"}`);
   } catch (err) {
     console.error(`Sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
     return fail("sign_in_failed");
   }
 
+  identity = await withUserInfo(identity, accessToken);
   const userId = await upsertUser(identity.sub, identity.email ?? null, identity.name ?? null);
 
   if (req.native_challenge) {

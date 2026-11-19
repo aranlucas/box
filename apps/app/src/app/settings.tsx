@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
-import { api, type Member } from '@/lib/api';
+import { api, displayName, type Member } from '@/lib/api';
 import { queries } from '@/lib/queries';
-import { useEnterHouse, useSession } from '@/lib/session';
+import { useEnterHouse, useSession, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
 import { colors, space } from '@/ui/theme';
@@ -24,12 +24,13 @@ function confirm(title: string, message: string, action: string): Promise<boolea
   );
 }
 
-export default function HouseScreen() {
+export default function SettingsScreen() {
   const session = useSession();
   const house = session.house;
   const me = session.me?.user;
   const qc = useQueryClient();
   const enterHouse = useEnterHouse();
+  const signOut = useSignOut();
   const people = useQuery(queries.members(house?.id));
   const members = people.data?.members ?? null;
   const invites = people.data?.invites ?? [];
@@ -83,10 +84,25 @@ export default function HouseScreen() {
     onError: (e) => setError(errMsg(e)),
   });
 
+  const account = me ? (
+    <Card>
+      <Text style={styles.label}>Signed in as</Text>
+      <Text style={styles.h2}>{displayName(me) ?? 'Your account'}</Text>
+      {me.name && me.email ? <Text style={styles.muted}>{me.email}</Text> : null}
+      {signOut.error ? <Banner tone="error">{errMsg(signOut.error)}</Banner> : null}
+      <Button
+        label="Sign out"
+        variant="secondary"
+        busy={signOut.isPending}
+        onPress={() => signOut.mutate(undefined, { onSuccess: () => router.replace('/') })}
+      />
+    </Card>
+  ) : null;
+
   if (!house || !me) {
     return (
       <Screen>
-        <Banner>Sign in and pick a house first.</Banner>
+        {account ?? <Banner>Sign in first.</Banner>}
       </Screen>
     );
   }
@@ -102,7 +118,9 @@ export default function HouseScreen() {
     const self = m.user_id === me!.id;
     const ok = await confirm(
       self ? 'Leave house' : 'Remove member',
-      self ? `Leave “${house!.name}”? You’ll need a new invite to come back.` : `Remove ${m.name ?? m.email} from “${house!.name}”?`,
+      self
+        ? `Leave “${house!.name}”? You’ll need a new invite to come back.`
+        : `Remove ${displayName(m) ?? 'this member'} from “${house!.name}”?`,
       self ? 'Leave' : 'Remove',
     );
     if (ok) removeMut.mutate(m);
@@ -112,13 +130,37 @@ export default function HouseScreen() {
 
   return (
     <Screen>
-      <View style={{ gap: space(1) }}>
-        <Text style={s.kicker}>{isOwner ? 'You own this house' : 'Member'}</Text>
-        <Text style={styles.h1}>{house.name}</Text>
+      {account}
+
+      <View style={{ gap: space(1), marginTop: space(2) }}>
+        <Text style={s.kicker}>{isOwner ? 'House · you’re the owner' : 'House · member'}</Text>
+        <Text style={styles.h2}>{house.name}</Text>
       </View>
 
       {error ? <Banner tone="error">{error}</Banner> : null}
       {notice ? <Banner tone="success">{notice}</Banner> : null}
+
+      <Card>
+        <Text style={styles.h2}>People</Text>
+        {!members
+          ? null
+          : members.map((m) => (
+              <View key={m.user_id} style={[styles.row, { justifyContent: 'space-between' }]}>
+                <View style={{ flexShrink: 1 }}>
+                  <Text style={[styles.body, !displayName(m) && { color: colors.muted }]}>
+                    {displayName(m) ?? 'Name not shared yet'}
+                    {m.user_id === me.id ? ' (you)' : ''}
+                  </Text>
+                  <Text style={styles.muted}>{m.role === 'owner' ? 'Owner' : 'Member'}</Text>
+                </View>
+                {isOwner || m.user_id === me.id ? (
+                  <Pressable onPress={() => remove(m)} accessibilityRole="button">
+                    <Text style={{ color: colors.red, fontWeight: '600' }}>{m.user_id === me.id ? 'Leave' : 'Remove'}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+      </Card>
 
       {isOwner ? (
         <Card>
@@ -150,28 +192,6 @@ export default function HouseScreen() {
           ) : null}
         </Card>
       ) : null}
-
-      <Card>
-        <Text style={styles.h2}>People</Text>
-        {!members
-          ? null
-          : members.map((m) => (
-              <View key={m.user_id} style={[styles.row, { justifyContent: 'space-between' }]}>
-                <View style={{ flexShrink: 1 }}>
-                  <Text style={styles.body}>
-                    {m.name ?? m.email}
-                    {m.user_id === me.id ? ' (you)' : ''}
-                  </Text>
-                  <Text style={styles.muted}>{m.role === 'owner' ? 'Owner' : 'Member'}</Text>
-                </View>
-                {isOwner || m.user_id === me.id ? (
-                  <Pressable onPress={() => remove(m)} accessibilityRole="button">
-                    <Text style={{ color: colors.red, fontWeight: '600' }}>{m.user_id === me.id ? 'Leave' : 'Remove'}</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-            ))}
-      </Card>
 
       {isOwner ? (
         <Card>

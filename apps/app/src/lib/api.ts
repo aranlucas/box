@@ -28,6 +28,10 @@ export type Member = { user_id: string; name: string | null; email: string | nul
 export type PendingInvite = { id: string; created_at: number; expires_at: number };
 export type InviteInfo = { house_name: string; inviter_name: string | null; status: 'valid' | 'used' | 'expired' | 'revoked' };
 
+/** Best label for a person; null when the auth service gave us neither name nor email. */
+export const displayName = (p: { name: string | null; email: string | null } | null | undefined) =>
+  p?.name?.trim() || p?.email?.trim() || null;
+
 export const HOME_ID = 'HOME0000';
 export const boxUrl = (id: string) => `${publicOrigin()}/b/${id}`;
 export const photoUrl = (id: string) => `${API_BASE}/api/photos/${id}`;

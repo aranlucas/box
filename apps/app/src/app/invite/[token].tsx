@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Text } from 'react-native';
 
-import { api, ApiError, type InviteInfo } from '@/lib/api';
+import { api, ApiError, displayName, type InviteInfo } from '@/lib/api';
 import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession, useSignIn } from '@/lib/session';
 import { Banner, Button, Card, Screen, styles } from '@/ui/components';
@@ -70,7 +70,7 @@ export default function Invite() {
           <Button label="Join" big busy={busy} onPress={join} />
         )}
       </Card>
-      {signedIn ? <Text style={styles.muted}>Signed in as {session.me?.user?.name ?? session.me?.user?.email}</Text> : null}
+      {signedIn && displayName(session.me?.user) ? <Text style={styles.muted}>Signed in as {displayName(session.me?.user)}</Text> : null}
     </Screen>
   );
 }
