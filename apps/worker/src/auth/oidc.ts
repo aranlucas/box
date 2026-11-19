@@ -1,6 +1,8 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 
-export const ISSUER = "https://auth.aranlucas.workers.dev/api/auth";
+declare const __BX_OIDC_ISSUER__: string | undefined;
+const ISSUER_OVERRIDE = typeof __BX_OIDC_ISSUER__ === "string" ? __BX_OIDC_ISSUER__ : "";
+export const ISSUER = ISSUER_OVERRIDE || "https://auth.aranlucas.workers.dev/api/auth";
 export const REDIRECT_URI = "https://bx.aranlucas.workers.dev/auth/callback";
 const SCOPE = "openid profile email";
 

@@ -1,20 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { api, type House, type Me } from './api';
+import { type House } from './api';
 import { signIn as platformSignIn, signOut as platformSignOut } from './auth';
-import { keys } from './query';
-
-const HOUSE_KEY = 'house-id';
+import { HOUSE_STORAGE_KEY, queries } from './queries';
 
 /** Who's signed in, their houses, and the house this device is currently looking at. */
 export function useSession() {
-  const me = useQuery({ queryKey: keys.me, queryFn: api.me });
-  const saved = useQuery({
-    queryKey: keys.savedHouse,
-    queryFn: () => AsyncStorage.getItem(HOUSE_KEY).catch(() => null),
-    staleTime: Infinity,
-  });
+  const me = useQuery(queries.me());
+  const saved = useQuery(queries.savedHouse());
   const houses = me.data?.houses ?? [];
   const house: House | null = houses.find((h) => h.id === saved.data) ?? houses[0] ?? null;
   return {
@@ -29,10 +23,10 @@ export function useSetHouse() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await AsyncStorage.setItem(HOUSE_KEY, id).catch(() => {});
+      await AsyncStorage.setItem(HOUSE_STORAGE_KEY, id).catch(() => {});
       return id;
     },
-    onSuccess: (id) => qc.setQueryData(keys.savedHouse, id),
+    onSuccess: (id) => qc.setQueryData(queries.savedHouse().queryKey, id),
   });
 }
 
@@ -41,7 +35,7 @@ export function useSignIn() {
   return useMutation({
     mutationFn: (returnTo?: string) => platformSignIn(returnTo),
     onSuccess: (ok) => {
-      if (ok) qc.invalidateQueries({ queryKey: keys.me });
+      if (ok) qc.invalidateQueries({ queryKey: queries.me().queryKey });
     },
   });
 }
@@ -51,12 +45,12 @@ export function useSignOut() {
   return useMutation({
     mutationFn: async () => {
       await platformSignOut();
-      await AsyncStorage.removeItem(HOUSE_KEY).catch(() => {});
+      await AsyncStorage.removeItem(HOUSE_STORAGE_KEY).catch(() => {});
     },
     onSuccess: () => {
       qc.clear();
-      qc.setQueryData<Me>(keys.me, { user: null, houses: [], legacyHomeClaimable: false });
-      qc.invalidateQueries({ queryKey: keys.me });
+      qc.setQueryData(queries.me().queryKey, { user: null, houses: [], legacyHomeClaimable: false });
+      qc.invalidateQueries({ queryKey: queries.me().queryKey });
     },
   });
 }
@@ -66,7 +60,7 @@ export function useEnterHouse() {
   const qc = useQueryClient();
   const setHouse = useSetHouse();
   return async (house: House) => {
-    await qc.invalidateQueries({ queryKey: keys.me });
+    await qc.invalidateQueries({ queryKey: queries.me().queryKey });
     await setHouse.mutateAsync(house.id);
   };
 }

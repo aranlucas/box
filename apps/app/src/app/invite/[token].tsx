@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Text } from 'react-native';
 
 import { api, ApiError, type InviteInfo } from '@/lib/api';
-import { keys } from '@/lib/query';
+import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession, useSignIn } from '@/lib/session';
 import { Banner, Button, Card, Screen, styles } from '@/ui/components';
 import { colors, space } from '@/ui/theme';
@@ -19,7 +19,7 @@ export default function Invite() {
   const session = useSession();
   const signIn = useSignIn();
   const enterHouse = useEnterHouse();
-  const inviteQuery = useQuery({ queryKey: keys.invite(token), queryFn: () => api.inviteInfo(token) });
+  const inviteQuery = useQuery(queries.invite(token));
   const info: InviteInfo | null = inviteQuery.data ?? null;
   const accept = useMutation({
     mutationFn: () => api.acceptInvite(token),

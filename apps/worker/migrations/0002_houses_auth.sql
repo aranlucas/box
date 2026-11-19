@@ -26,7 +26,7 @@ CREATE TABLE auth_requests (
 
 CREATE TABLE native_codes (
   code_hash TEXT PRIMARY KEY,
-  session_token TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   challenge TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );

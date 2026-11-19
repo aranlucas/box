@@ -20,14 +20,3 @@ if (Platform.OS !== 'web') {
     return () => sub.remove();
   });
 }
-
-export const keys = {
-  me: ['me'] as const,
-  savedHouse: ['saved-house'] as const,
-  boxes: (houseId: string, q: string) => ['boxes', houseId, q] as const,
-  allBoxes: ['boxes'] as const,
-  box: (id: string) => ['box', id] as const,
-  members: (houseId: string) => ['members', houseId] as const,
-  invite: (token: string) => ['invite', token] as const,
-  printerReconnect: ['printer', 'reconnect'] as const,
-};

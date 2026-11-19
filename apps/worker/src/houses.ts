@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { Hono, type Context } from "hono";
 import { userFromRequest, type User } from "./auth/session.ts";
-import { randomToken, sha256Hex } from "./util.ts";
+import { allow, randomToken, safeEqual, sha256Hex } from "./util.ts";
 
 export const HOME_ID = "HOME0000";
 export const PUBLIC_ORIGIN = "https://bx.aranlucas.workers.dev";
@@ -31,7 +31,7 @@ export async function roleIn(userId: string, houseId: string): Promise<Role | nu
 export async function actorFrom(c: Context): Promise<Actor> {
   const user = await userFromRequest(c);
   const key = c.req.header("x-household-key");
-  const legacy = !!key && !!env.HOUSEHOLD_KEY && key === env.HOUSEHOLD_KEY && (await homeUnclaimed());
+  const legacy = !!key && !!env.HOUSEHOLD_KEY && (await safeEqual(key, env.HOUSEHOLD_KEY)) && (await homeUnclaimed());
   return { user, legacy };
 }
 
@@ -82,8 +82,11 @@ houseRoutes.post("/houses/:id/claim", async (c) => {
   const user = await userFromRequest(c);
   const denied = needUser(c, user);
   if (denied) return denied;
+  if (!(await allow(env.SENSITIVE_LIMIT, "claim", c.req.header("cf-connecting-ip")))) {
+    return c.json({ error: "Too many attempts. Try again in a minute." }, 429);
+  }
   const { key } = (await c.req.json<{ key?: string }>().catch(() => ({}))) as { key?: string };
-  if (!key || !env.HOUSEHOLD_KEY || key.trim() !== env.HOUSEHOLD_KEY) return c.json({ error: "Wrong key" }, 403);
+  if (!key || !env.HOUSEHOLD_KEY || !(await safeEqual(key.trim(), env.HOUSEHOLD_KEY))) return c.json({ error: "Wrong key" }, 403);
   const now = Date.now();
   // Single statement so two simultaneous claims can't both win.
   const res = await env.DB.prepare(
@@ -209,6 +212,9 @@ houseRoutes.post("/invites/:token/accept", async (c) => {
   const user = await userFromRequest(c);
   const denied = needUser(c, user);
   if (denied) return denied;
+  if (!(await allow(env.SENSITIVE_LIMIT, "accept", c.req.header("cf-connecting-ip")))) {
+    return c.json({ error: "Too many attempts. Try again in a minute." }, 429);
+  }
   const inv = await loadInvite(c.req.param("token"));
   if (!inv) return c.json({ error: "Invite not found" }, 404);
   const house = { id: inv.row.house_id, name: inv.row.house_name };

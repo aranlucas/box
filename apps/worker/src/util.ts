@@ -16,8 +16,33 @@ export async function s256(verifier: string): Promise<string> {
   return b64url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))));
 }
 
-/** Only same-origin absolute paths; anything else falls back to "/". */
+const ORIGIN = "https://bx.aranlucas.workers.dev";
+
+/** Constant-time string comparison (compares SHA-256 digests so lengths don't leak). */
+export async function safeEqual(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Per-IP rate limit; true when the request may proceed. */
+export async function allow(limiter: RateLimit, scope: string, ip: string | undefined): Promise<boolean> {
+  const { success } = await limiter.limit({ key: `${scope}:${ip ?? "unknown"}` });
+  return success;
+}
+
+/**
+ * Only same-origin paths; anything else falls back to "/". Control characters are rejected outright
+ * (browsers strip tabs/newlines, so "/\t/evil.com" would become "//evil.com"), then the path is
+ * resolved against our origin and must stay on it.
+ */
 export function safeReturnPath(p: string | undefined): string {
-  if (!p || !p.startsWith("/") || p.startsWith("//") || p.includes("\\")) return "/";
-  return p;
+  if (!p || !p.startsWith("/") || /[\x00-\x20\x7f\\]/.test(p)) return "/";
+  try {
+    const u = new URL(p, ORIGIN);
+    return u.origin === ORIGIN ? u.pathname + u.search + u.hash : "/";
+  } catch {
+    return "/";
+  }
 }

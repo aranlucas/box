@@ -1,12 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { Alert, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
 import { api, type Member } from '@/lib/api';
-import { keys } from '@/lib/query';
+import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession } from '@/lib/session';
-import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
+import { Banner, Button, Card, Screen, styles } from '@/ui/components';
+import { FormField } from '@/ui/form-field';
 import { colors, space } from '@/ui/theme';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -28,19 +30,15 @@ export default function HouseScreen() {
   const me = session.me?.user;
   const qc = useQueryClient();
   const enterHouse = useEnterHouse();
-  const people = useQuery({
-    queryKey: keys.members(house?.id ?? ''),
-    queryFn: () => api.members(house!.id),
-    enabled: !!house,
-  });
+  const people = useQuery(queries.members(house?.id));
   const members = people.data?.members ?? null;
   const invites = people.data?.invites ?? [];
-  const refreshPeople = () => qc.invalidateQueries({ queryKey: keys.members(house?.id ?? '') });
+  const refreshPeople = () => qc.invalidateQueries({ queryKey: queries.members(house?.id).queryKey });
   const [link, setLink] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setError] = useState<string | null>(null);
   const error = actionError ?? (people.error ? errMsg(people.error) : null);
-  const [newHouse, setNewHouse] = useState('');
+  const houseForm = useForm<{ name: string }>({ defaultValues: { name: '' }, mode: 'onChange' });
 
   const inviteMut = useMutation({
     mutationFn: () => api.createInvite(house!.id),
@@ -70,7 +68,7 @@ export default function HouseScreen() {
     mutationFn: (m: Member) => api.removeMember(house!.id, m.user_id),
     onSuccess: async (_r, m) => {
       if (m.user_id === me?.id) {
-        await qc.invalidateQueries({ queryKey: keys.me });
+        await qc.invalidateQueries({ queryKey: queries.me().queryKey });
         router.replace('/');
       } else refreshPeople();
     },
@@ -110,10 +108,7 @@ export default function HouseScreen() {
     if (ok) removeMut.mutate(m);
   }
 
-  function createHouse() {
-    const name = newHouse.trim();
-    if (name) createHouseMut.mutate(name);
-  }
+  const createHouse = () => void houseForm.handleSubmit(({ name }) => createHouseMut.mutate(name.trim()))();
 
   return (
     <Screen>
@@ -182,8 +177,20 @@ export default function HouseScreen() {
         <Card>
           <Text style={styles.h2}>Another house</Text>
           <Text style={styles.muted}>For a second home, storage unit or garage. Box numbers start at 1 in each house.</Text>
-          <Field value={newHouse} onChangeText={setNewHouse} placeholder="e.g. Storage unit" onSubmitEditing={createHouse} />
-          <Button label="Create house" variant="secondary" busy={createHouseMut.isPending} disabled={!newHouse.trim()} onPress={createHouse} />
+          <FormField
+            control={houseForm.control}
+            name="name"
+            rules={{ validate: (v) => (v.trim().length > 0 && v.trim().length <= 60) || 'Name it in 1–60 characters' }}
+            placeholder="e.g. Storage unit"
+            onSubmitEditing={createHouse}
+          />
+          <Button
+            label="Create house"
+            variant="secondary"
+            busy={createHouseMut.isPending}
+            disabled={!houseForm.formState.isValid}
+            onPress={createHouse}
+          />
         </Card>
       ) : null}
     </Screen>

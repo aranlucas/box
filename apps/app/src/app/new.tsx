@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import { api, type FormDataPhoto } from '@/lib/api';
-import { keys } from '@/lib/query';
+import { queries } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import { takeBoxPhoto } from '@/lib/photo';
 import { Banner, Button, Screen, styles } from '@/ui/components';
@@ -19,8 +19,8 @@ export default function NewBox() {
       return api.createBox(house.id, photo);
     },
     onSuccess: (res) => {
-      qc.setQueryData(keys.box(res.box.id), res.box);
-      qc.invalidateQueries({ queryKey: keys.allBoxes });
+      qc.setQueryData(queries.box(res.box.id).queryKey, res.box);
+      qc.invalidateQueries({ queryKey: queries.allBoxes() });
       router.replace({ pathname: '/b/[id]', params: { id: res.box.id, fresh: res.aiFailed ? 'ai-failed' : '1' } });
     },
   });

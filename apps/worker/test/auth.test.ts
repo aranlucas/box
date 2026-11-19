@@ -9,6 +9,9 @@ describe("safeReturnPath", () => {
   test("rejects absolute URLs", () => expect(safeReturnPath("https://evil.com")).toBe("/"));
   test("rejects backslash tricks", () => expect(safeReturnPath("/\\evil.com")).toBe("/"));
   test("defaults when missing", () => expect(safeReturnPath(undefined)).toBe("/"));
+  test("rejects tab-smuggled protocol-relative URLs", () => expect(safeReturnPath("/\t/evil.com")).toBe("/"));
+  test("rejects newline-smuggled protocol-relative URLs", () => expect(safeReturnPath("/\n/evil.com")).toBe("/"));
+  test("keeps query and hash", () => expect(safeReturnPath("/invite/abc?x=1#y")).toBe("/invite/abc?x=1#y"));
 });
 
 test("s256 matches the RFC 7636 test vector", async () => {

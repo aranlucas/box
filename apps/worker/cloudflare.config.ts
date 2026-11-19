@@ -20,6 +20,9 @@ export default defineConfig({
       HOUSEHOLD_KEY: bindings.secret(),
       AUTH_CLIENT_ID: bindings.secret(),
       AUTH_CLIENT_SECRET: bindings.secret(),
+      // Per-IP throttles: household-key claims / invite accepts, and sign-in starts.
+      SENSITIVE_LIMIT: bindings.rateLimit({ namespace: "2001", simple: { limit: 5, period: 60 } }),
+      LOGIN_LIMIT: bindings.rateLimit({ namespace: "2002", simple: { limit: 20, period: 60 } }),
     },
   },
 });

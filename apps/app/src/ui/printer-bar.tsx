@@ -1,26 +1,15 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { connectPrinter, disconnectPrinter, printerHelp, tryReconnect, usePrinter } from '@/lib/printer';
-import { keys } from '@/lib/query';
+import { connectPrinter, disconnectPrinter, printerHelp, usePrinter } from '@/lib/printer';
+import { queries } from '@/lib/queries';
 
 import { colors, radius, space } from './theme';
 
 /** Compact printer status + connect control. */
 export function PrinterBar() {
   const state = usePrinter();
-  // Silently reconnect to the last-used printer once per app session (shared across screens).
-  useQuery({
-    queryKey: keys.printerReconnect,
-    queryFn: async () => {
-      await tryReconnect();
-      return true;
-    },
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+  useQuery(queries.printerReconnect());
   const connect = useMutation({ mutationFn: (opts: { acceptAll?: boolean }) => connectPrinter(opts) });
 
   if (state.status === 'unsupported') {

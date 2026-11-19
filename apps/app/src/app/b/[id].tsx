@@ -2,13 +2,15 @@ import { titleLayout } from '@mj/label';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
-import { keys } from '@/lib/query';
+import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printLabel, usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
+import { FormField } from '@/ui/form-field';
 import { LabelPreview } from '@/ui/label-preview';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
@@ -20,7 +22,7 @@ export default function BoxScreen() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const boxId = (id ?? '').toUpperCase();
   const qc = useQueryClient();
-  const boxQuery = useQuery({ queryKey: keys.box(boxId), queryFn: () => api.getBox(boxId) });
+  const boxQuery = useQuery(queries.box(boxId));
   const box = boxQuery.data ?? null;
   // Local edits layered on top of the server copy; null = no unsaved changes.
   const [edits, setEdits] = useState<Draft | null>(null);
@@ -28,14 +30,14 @@ export default function BoxScreen() {
   const setDraft = (d: Draft) => setEdits(d);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [newItem, setNewItem] = useState('');
+  const itemForm = useForm<{ name: string }>({ defaultValues: { name: '' } });
   const printer = usePrinter();
 
   /** Server returned a fresh box: update the cache, drop local edits, refresh lists. */
   function accept(b: Box) {
-    qc.setQueryData(keys.box(boxId), { ...b, can_edit: b.can_edit ?? box?.can_edit });
+    qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: b.can_edit ?? box?.can_edit });
     setEdits(null);
-    qc.invalidateQueries({ queryKey: keys.allBoxes });
+    qc.invalidateQueries({ queryKey: queries.allBoxes() });
   }
 
   const dirty = useMemo(() => {
@@ -108,8 +110,8 @@ export default function BoxScreen() {
   const statusMut = useMutation({
     mutationFn: (status: Box['status']) => api.updateBox(boxId, { status }),
     onSuccess: (b) => {
-      qc.setQueryData(keys.box(boxId), { ...b, can_edit: box?.can_edit });
-      qc.invalidateQueries({ queryKey: keys.allBoxes });
+      qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: box?.can_edit });
+      qc.invalidateQueries({ queryKey: queries.allBoxes() });
     },
     onError: (e) => setError(e.message),
   });
@@ -118,8 +120,8 @@ export default function BoxScreen() {
   const deleteMut = useMutation({
     mutationFn: () => api.deleteBox(boxId),
     onSuccess: () => {
-      qc.removeQueries({ queryKey: keys.box(boxId) });
-      qc.invalidateQueries({ queryKey: keys.allBoxes });
+      qc.removeQueries({ queryKey: queries.box(boxId).queryKey });
+      qc.invalidateQueries({ queryKey: queries.allBoxes() });
       router.replace('/');
     },
     onError: (e) => setError(e.message),
@@ -140,12 +142,13 @@ export default function BoxScreen() {
 
   const setItems = (fn: (items: Item[]) => Item[]) => draft && setEdits({ ...draft, items: fn(draft.items) });
 
-  function addItem() {
-    const name = newItem.trim();
-    if (!name) return;
-    setItems((items) => [...items, { name, quantity: null, source: 'manual' }]);
-    setNewItem('');
-  }
+  const addItem = () =>
+    void itemForm.handleSubmit(({ name }) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setItems((items) => [...items, { name: trimmed, quantity: null, source: 'manual' }]);
+      itemForm.reset();
+    })();
 
   if (boxQuery.error && !box) {
     const notFound = boxQuery.error instanceof ApiError && boxQuery.error.status === 404;
@@ -266,15 +269,15 @@ export default function BoxScreen() {
           </View>
         ))}
         <View style={s.itemRow}>
-          <TextInput
-            value={newItem}
-            onChangeText={setNewItem}
+          <FormField
+            control={itemForm.control}
+            name="name"
             onSubmitEditing={addItem}
             placeholder="Add an item…"
-            placeholderTextColor={colors.muted}
             returnKeyType="done"
-            blurOnSubmit={false}
-            style={[s.itemInput, { flex: 1 }]}
+            submitBehavior="submit"
+            containerStyle={{ flex: 1 }}
+            style={s.itemInput}
           />
           <Button label="Add" variant="secondary" onPress={addItem} />
         </View>

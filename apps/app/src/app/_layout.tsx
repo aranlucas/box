@@ -29,6 +29,7 @@ export default function RootLayout() {
         <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
         <Stack.Screen name="house" options={{ title: 'House' }} />
         <Stack.Screen name="invite/[token]" options={{ title: 'Invite' }} />
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
       </Stack>
     </QueryClientProvider>
   );

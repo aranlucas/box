@@ -1,12 +1,14 @@
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useDeferredValue, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, type BoxSummary } from '@/lib/api';
-import { keys } from '@/lib/query';
+import { queries } from '@/lib/queries';
 import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
+import { FormField } from '@/ui/form-field';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
@@ -45,11 +47,11 @@ function SignedOut({ error }: { error?: string | null }) {
 }
 
 function NoHouse({ claimable, name }: { claimable: boolean; name: string | null }) {
-  const [key, setKey] = useState('');
   const enterHouse = useEnterHouse();
   const signOut = useSignOut();
-  const claimMut = useMutation({ mutationFn: () => api.claimHome(key.trim()), onSuccess: enterHouse });
-  const claim = () => claimMut.mutate();
+  const form = useForm<{ key: string }>({ defaultValues: { key: '' }, mode: 'onChange' });
+  const claimMut = useMutation({ mutationFn: (key: string) => api.claimHome(key), onSuccess: enterHouse });
+  const claim = () => void form.handleSubmit(({ key }) => claimMut.mutate(key.trim()))();
   const err = claimMut.error ? errMsg(claimMut.error) : null;
 
   return (
@@ -61,17 +63,18 @@ function NoHouse({ claimable, name }: { claimable: boolean; name: string | null 
           <Text style={styles.body}>
             Boxes packed before sign-in live in a house called “Home”. Enter the old household key once to become its owner.
           </Text>
-          <Field
+          <FormField
+            control={form.control}
+            name="key"
+            rules={{ validate: (v) => v.trim().length > 0 || 'Enter the household key' }}
             label="Household key"
-            value={key}
-            onChangeText={setKey}
             autoCapitalize="none"
             autoCorrect={false}
             secureTextEntry
             onSubmitEditing={claim}
           />
           {err ? <Banner tone="error">{err}</Banner> : null}
-          <Button label="Claim Home" busy={claimMut.isPending} disabled={!key.trim()} onPress={claim} />
+          <Button label="Claim Home" busy={claimMut.isPending} disabled={!form.formState.isValid} onPress={claim} />
         </Card>
       ) : null}
       <Card>
@@ -91,11 +94,7 @@ function Boxes() {
   const signOut = useSignOut();
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
-  const list = useQuery({
-    queryKey: keys.boxes(house.id, query),
-    queryFn: () => api.listBoxes(house.id, query),
-    placeholderData: keepPreviousData,
-  });
+  const list = useQuery(queries.boxes(house.id, query));
   const boxes: BoxSummary[] | undefined = list.data;
   const error = list.error ? errMsg(list.error) : null;
 
