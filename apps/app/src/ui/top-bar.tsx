@@ -30,7 +30,7 @@ export function TopBar({ navigation, options, route, back }: NativeStackHeaderPr
         <Text style={s.title} numberOfLines={1} accessibilityRole="header">
           {title}
         </Text>
-        <View style={s.side} />
+        <View style={[s.side, s.right]}>{options.headerRight?.({ canGoBack: !!back, tintColor: colors.kraftDark })}</View>
       </View>
     </View>
   );
@@ -49,6 +49,7 @@ const s = StyleSheet.create({
   },
   // Equal-width sides keep the title centred whether or not there's a back button.
   side: { width: 88, alignItems: 'flex-start' },
+  right: { alignItems: 'flex-end' },
   back: { minHeight: 44, justifyContent: 'center' },
   backText: { fontSize: 17, fontWeight: '600', color: colors.kraftDark },
   title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.ink },
