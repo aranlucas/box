@@ -1,17 +1,61 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { remotePrinters, useHousehold } from '@/lib/household';
 import { connectPrinter, disconnectPrinter, usePrinter } from '@/lib/printer';
 import { queries } from '@/lib/queries';
 
+import { Button, Card, styles } from './components';
 import { colors, radius, space } from './theme';
+
+export function PrinterButton({ availability, onPress }: {
+  availability: 'ready' | 'setup' | 'unavailable';
+  onPress: () => void;
+}) {
+  const available = availability === 'ready';
+  const materialSymbol = availability === 'unavailable' ? 'print_disabled' : 'print';
+  const statusLabel = {
+    ready: 'printer available',
+    setup: 'connect a printer',
+    unavailable: 'printing unavailable',
+  }[availability];
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Printer options, ${statusLabel}`}
+      onPress={onPress}
+      style={({ pressed }) => [s.iconButton, pressed && { opacity: 0.6 }]}>
+      <SymbolView
+        name={{ ios: available ? 'printer.fill' : 'printer', android: materialSymbol, web: materialSymbol }}
+        tintColor={available ? colors.green : colors.muted}
+        size={24}
+        aria-hidden
+        importantForAccessibility="no-hide-descendants"
+      />
+    </Pressable>
+  );
+}
+
+export function PrinterOptions({ visible, houseId, onClose }: { visible: boolean; houseId: string; onClose: () => void }) {
+  return (
+    <Modal transparent visible={visible} onRequestClose={onClose} animationType="fade">
+      <View style={s.modal}>
+        <Card style={s.modalCard}>
+          <Text accessibilityRole="header" style={styles.h2}>Printer</Text>
+          <PrinterBar houseId={houseId} />
+          <Button label="Done" variant="secondary" onPress={onClose} />
+        </Card>
+      </View>
+    </Modal>
+  );
+}
 
 /**
  * Printer status + connect control. When this device has no printer but another device in the
  * current house does, it offers to print through that one. `showTable` adds the house's printer table.
  */
-export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
+export function PrinterBar({ showTable = false, houseId }: { showTable?: boolean; houseId?: string }) {
   const state = usePrinter();
   const household = useHousehold();
   useQuery(queries.printerReconnect());
@@ -19,8 +63,8 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
 
   const supported = state.status !== 'unsupported';
   const connected = state.status === 'connected' || state.status === 'printing';
-  const remote = remotePrinters(household);
-  const via = !connected ? remote[0] : undefined;
+  const via =
+    !connected && (houseId === undefined || houseId === household.houseId) ? remotePrinters(household)[0] : undefined;
 
   let chip: { label: string; on: boolean; onPress?: () => void } | null = null;
   if (state.status === 'connecting') chip = { label: 'Connecting…', on: false };
@@ -32,8 +76,6 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
     };
   else if (via) chip = { label: `Print via ${via.device_name}`, on: true };
   else if (supported) chip = { label: 'Connect printer', on: false, onPress: () => connect.mutate({}) };
-
-  const served = household.lastServed;
 
   return (
     <View style={{ gap: space(1) }}>
@@ -55,12 +97,6 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
         </View>
       ) : null}
 
-      {connected && household.sharing ? (
-        <Text style={s.help}>
-          Shared with your house{served ? ` · printed box #${served.number} for another device` : ''}. Keep the app open
-          here so others can print.
-        </Text>
-      ) : null}
       {!connected && !via ? (
         <Text style={s.help}>
           {supported
@@ -96,6 +132,9 @@ function HouseholdTable() {
 }
 
 const s = StyleSheet.create({
+  iconButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  modal: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space(4), backgroundColor: 'rgba(29, 26, 22, 0.4)' },
+  modalCard: { width: '100%', maxWidth: 360 },
   row: { flexDirection: 'row', alignItems: 'center', gap: space(3), flexWrap: 'wrap' },
   chip: {
     flexDirection: 'row',

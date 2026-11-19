@@ -27,8 +27,6 @@ type HouseholdState = {
   deviceId?: string;
   /** True while this device is offering its printer to the household. */
   sharing: boolean;
-  /** Last label this device printed for someone else. */
-  lastServed?: { number: number; at: number };
 };
 
 const store = createStore<HouseholdState>({ houseId: null, printers: [], sharing: false });
@@ -171,7 +169,6 @@ async function serve(houseId: string, job: QueuedJob, deviceId: string) {
   }
   try {
     await serialized(() => printLabel(job.label, { connect: false }));
-    store.set({ lastServed: { number: job.label.number, at: Date.now() } });
     await api.completePrintJob(houseId, job.id, deviceId, { ok: true }).catch(() => {});
   } catch (e) {
     await api.completePrintJob(houseId, job.id, deviceId, { ok: false, error: errMsg(e) }).catch(() => {});

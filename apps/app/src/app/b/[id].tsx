@@ -14,7 +14,7 @@ import { usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
 import { LabelPreview } from '@/ui/label-preview';
-import { PrinterBar } from '@/ui/printer-bar';
+import { PrinterButton, PrinterOptions } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
 export default function BoxScreen() {
@@ -31,11 +31,15 @@ export default function BoxScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const itemForm = useForm<{ name: string }>({ defaultValues: { name: '' } });
   const [printing, setPrinting] = useState(false);
+  const [printerOptionsOpen, setPrinterOptionsOpen] = useState(false);
   const printer = usePrinter();
   const household = useHousehold();
+  useQuery({ ...queries.printerReconnect(), enabled: box?.can_edit === true });
   const localReady = printer.status === 'connected' || printer.status === 'printing';
   // A printer on another device in this box's house, when this device has none connected.
   const via = localReady || !box || box.house_id !== household.houseId ? undefined : remotePrinters(household)[0];
+  const printerAvailable = localReady || !!via;
+  const printingUnavailable = !printerAvailable && printer.status === 'unsupported';
 
   /** Server returned a fresh box: update the cache and refresh lists. */
   function cache(b: Box) {
@@ -183,7 +187,21 @@ export default function BoxScreen() {
   const saving = saveMut.isPending;
   const addingPhoto = photoMut.isPending;
 
-  const header = <Stack.Screen options={{ title: `Box #${box.number}` }} />;
+  const header = (
+    <Stack.Screen
+      options={{
+        title: `Box #${box.number}`,
+        headerRight: box.can_edit
+          ? () => (
+              <PrinterButton
+                availability={printerAvailable ? 'ready' : printingUnavailable ? 'unavailable' : 'setup'}
+                onPress={() => setPrinterOptionsOpen(true)}
+              />
+            )
+          : undefined,
+      }}
+    />
+  );
 
   // Read-only view for anyone who scanned the label without the household key.
   // Read-only unless the viewer belongs to this box's house (server decides).
@@ -217,6 +235,7 @@ export default function BoxScreen() {
   return (
     <Screen>
       {header}
+      <PrinterOptions visible={printerOptionsOpen} houseId={box.house_id} onClose={() => setPrinterOptionsOpen(false)} />
       {fresh === 'ai-failed' ? (
         <Banner tone="error">The photo was saved but the AI couldn’t read it. Add items by hand or try another photo.</Banner>
       ) : fresh ? (
@@ -243,20 +262,18 @@ export default function BoxScreen() {
 
       <Card style={{ alignItems: 'center' }}>
         <LabelPreview input={{ number: box.number, title: draft.title || `Box ${box.number}`, url: boxUrl(box.id) }} />
-        <View style={{ alignSelf: 'stretch', gap: space(2) }}>
-          <Button
-            label={
-              printing || printer.status === 'printing'
-                ? 'Printing…'
-                : `${dirty ? 'Save & print label' : 'Print label'}${via ? ` via ${via.device_name}` : ''}`
-            }
-            big
-            busy={printing || printer.status === 'printing' || saving}
-            disabled={printer.status === 'unsupported' && !via}
-            onPress={print}
-          />
-          <PrinterBar />
-        </View>
+        <Button
+          label={
+            printing || printer.status === 'printing'
+              ? 'Printing…'
+              : `${dirty ? 'Save & print label' : 'Print label'}${via ? ` via ${via.device_name}` : ''}`
+          }
+          big
+          busy={printing || printer.status === 'printing' || saving}
+          disabled={printingUnavailable}
+          onPress={print}
+          style={{ alignSelf: 'stretch' }}
+        />
       </Card>
 
       {notice ? <Banner tone="success">{notice}</Banner> : null}
