@@ -2,10 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { queryOptions } from '@tanstack/react-query';
 
 import { api } from './api';
+import { getDeviceId } from './device';
 import { sameHousePlaceholder } from './draft';
 import { tryReconnect } from './printer';
 
 export const HOUSE_STORAGE_KEY = 'house-id';
+/** How often a screen showing the house's printers asks again. */
+export const PRINTERS_POLL_MS = 5000;
 
 /** Every query in the app is defined here with queryOptions(), so keys and data types stay in sync. */
 export const queries = {
@@ -38,6 +41,24 @@ export const queries = {
       queryKey: ['legacy-household-key'],
       queryFn: () => AsyncStorage.getItem('household-key').catch(() => null),
       staleTime: Infinity,
+    }),
+
+  /** This install's id in the house's printer table. */
+  deviceId: () =>
+    queryOptions({
+      queryKey: ['device-id'],
+      queryFn: getDeviceId,
+      staleTime: Infinity,
+      gcTime: Infinity,
+    }),
+
+  /** The house's connection status table: every device in it that can print right now. Polled while shown. */
+  printers: (houseId: string) =>
+    queryOptions({
+      queryKey: ['printers', houseId],
+      queryFn: () => api.listPrinters(houseId),
+      staleTime: 0,
+      refetchInterval: PRINTERS_POLL_MS,
     }),
 
   invite: (token: string) =>

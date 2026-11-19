@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
-import { setHouseholdHouse, startHousehold } from '@/lib/household';
+import { useSharePrinter } from '@/lib/household';
 import { queries } from '@/lib/queries';
 import { queryClient } from '@/lib/query';
 import { useSession } from '@/lib/session';
@@ -30,7 +30,6 @@ const screenOptions: NativeStackNavigationOptions = {
 export default function RootLayout() {
   useEffect(() => {
     void SplashScreen.hideAsync().catch(() => {});
-    startHousehold(); // share this device's printer with the house / find a printer in it
   }, []);
   return (
     <QueryClientProvider client={queryClient}>
@@ -49,16 +48,14 @@ export default function RootLayout() {
 }
 
 /**
- * Keep printer sharing pointed at the house this device is looking at, and reconnect the last-used
- * printer once at app start (whatever screen opens first) so a shared printer keeps serving the house.
+ * Share this device's printer with the house it is looking at, and reconnect the last-used printer
+ * once at app start (whatever screen opens first) so a shared printer keeps serving the house.
  */
 function HouseholdSync() {
   const session = useSession();
   const houseId = session.status === 'signed-in' ? session.house?.id : undefined;
   // Only once this device is in a house: a signed-out device has nobody to share the printer with.
   useQuery({ ...queries.printerReconnect(), enabled: houseId !== undefined });
-  useEffect(() => {
-    setHouseholdHouse(houseId);
-  }, [houseId]);
+  useSharePrinter(houseId);
   return null;
 }

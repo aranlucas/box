@@ -59,7 +59,7 @@ export const printingRoutes = new Hono<HouseEnv>();
 /** The connection status table: every device in this house that can print right now. */
 printingRoutes.get('/printers', requireHouse, async (c) => {
   const { results } = await env.DB.prepare(
-    `SELECT device_id, device_name, printer_name, last_seen FROM printer_connections
+    `SELECT device_id, device_name, printer_name FROM printer_connections
      WHERE house_id = ? AND last_seen > ? ORDER BY last_seen DESC`,
   )
     .bind(c.var.houseId, Date.now() - ONLINE_MS)

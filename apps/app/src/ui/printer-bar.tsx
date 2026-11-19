@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 
-import { remotePrinters, useHousehold } from '@/lib/household';
+import { useRemotePrinters } from '@/lib/household';
 import { connectPrinter, disconnectPrinter, usePrinter } from '@/lib/printer';
 import { queries } from '@/lib/queries';
 import { isReady } from '@/lib/store';
@@ -13,10 +13,10 @@ import { colors, radius, space } from './theme';
 /** What printing a label for `houseId` would use right now: this device's printer, or one elsewhere in the house. */
 export function usePrinting(houseId: string) {
   const printer = usePrinter();
-  const household = useHousehold();
+  const [remote] = useRemotePrinters(houseId);
   const local = isReady(printer.status);
   // A printer on another device in that house, when this device has none connected.
-  const via = local || household.houseId !== houseId ? undefined : remotePrinters(household)[0];
+  const via = local ? undefined : remote;
   // `unavailable`: no printer in reach, and this device cannot connect one itself.
   const unreachable = printer.status === 'unsupported' ? 'unavailable' : 'setup';
   return { printer, via, availability: local || via ? 'ready' : unreachable } as const;
@@ -140,7 +140,6 @@ export function PrinterBar({
   showTable?: boolean;
 }) {
   const { printer, via } = usePrinting(houseId);
-  const { sharing } = useHousehold();
   useQuery(queries.printerReconnect());
   const connect = useMutation({ mutationFn: connectPrinter });
 
@@ -159,7 +158,7 @@ export function PrinterBar({
             />
             <LinkButton label="Disconnect" onPress={disconnectPrinter} />
           </View>
-          {sharing ? <Text style={s.help}>{HELP.shared}</Text> : null}
+          <Text style={s.help}>{HELP.shared}</Text>
         </>
       ) : (
         <>
@@ -186,14 +185,15 @@ export function PrinterBar({
         </>
       )}
       {printer.error ? <Text style={styles.error}>{printer.error}</Text> : null}
-      {showTable ? <HouseholdTable /> : null}
+      {showTable ? <HouseholdTable houseId={houseId} /> : null}
     </View>
   );
 }
 
 /** The house's connection status table: every device in it that can print right now. */
-function HouseholdTable() {
-  const { printers, deviceId } = useHousehold();
+function HouseholdTable({ houseId }: { houseId: string }) {
+  const deviceId = useQuery(queries.deviceId()).data;
+  const printers = useQuery(queries.printers(houseId)).data ?? [];
   if (printers.length === 0) {
     return null;
   }

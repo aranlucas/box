@@ -38,7 +38,6 @@ export type HouseholdPrinter = {
   device_id: string;
   device_name: string;
   printer_name: string | null;
-  last_seen: number;
 };
 export type QueuedJob = { id: string; label: LabelInput; requestedBy: string; createdAt: number };
 export type PrintJobStatus = 'queued' | 'printing' | 'done' | 'failed';
