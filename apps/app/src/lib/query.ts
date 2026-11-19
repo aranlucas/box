@@ -29,4 +29,5 @@ export const keys = {
   box: (id: string) => ['box', id] as const,
   members: (houseId: string) => ['members', houseId] as const,
   invite: (token: string) => ['invite', token] as const,
+  printerReconnect: ['printer', 'reconnect'] as const,
 };
