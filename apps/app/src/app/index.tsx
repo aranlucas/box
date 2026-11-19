@@ -20,7 +20,7 @@ export default function Home() {
 
   if (session.loading && !session.me) {
     return (
-      <Screen>
+      <Screen safeTop>
         <ActivityIndicator color={colors.kraft} style={{ marginTop: space(10) }} />
       </Screen>
     );
@@ -34,7 +34,7 @@ function SignedOut({ error }: { error?: string | null }) {
   const signIn = useSignIn();
   const err = signIn.error ? errMsg(signIn.error) : null;
   return (
-    <Screen>
+    <Screen safeTop>
       <Text style={styles.h1}>Moving boxes</Text>
       <Card>
         <Text style={styles.body}>Sign in to pack, print and search your household’s boxes.</Text>
@@ -61,7 +61,7 @@ function NoHouse({ claimable, name }: { claimable: boolean; name: string | null 
   const err = claimMut.error ? errMsg(claimMut.error) : null;
 
   return (
-    <Screen>
+    <Screen safeTop>
       <Text style={styles.h1}>Hi{name ? `, ${name.split(' ')[0]}` : ''}</Text>
       {claimable ? (
         <Card>
@@ -111,7 +111,7 @@ function Boxes() {
   const error = !awaitingQuery && list.error ? errMsg(list.error) : null;
 
   return (
-    <Screen>
+    <Screen safeTop>
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <View style={{ flexShrink: 1 }}>
           <Text style={s.kicker}>{house.name}</Text>

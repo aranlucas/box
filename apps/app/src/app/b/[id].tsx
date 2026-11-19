@@ -192,7 +192,7 @@ export default function BoxScreen() {
       <Screen>
         {header}
         <View style={{ gap: space(1) }}>
-          <Text style={s.kicker}>Box #{box.number}{box.room ? ` · ${box.room}` : ''}</Text>
+          {box.room ? <Text style={s.kicker}>{box.room}</Text> : null}
           <Text style={styles.h1}>{box.title}</Text>
         </View>
         {box.status === 'unpacked' ? <Banner tone="success">Marked as unpacked.</Banner> : null}
@@ -224,10 +224,10 @@ export default function BoxScreen() {
       ) : null}
 
       <View style={{ gap: space(1) }}>
-        <Text style={s.kicker}>Box #{box.number}</Text>
         <TextInput
           value={draft.title}
-          onChangeText={(title) => setDraft({ ...draft, title })}
+          onChangeText={(title) => setDraft({ ...draft, title: oneLine(title) })}
+          {...wrapOnAndroid}
           style={s.titleInput}
           placeholder={`Box ${box.number}`}
           placeholderTextColor={colors.muted}
@@ -268,7 +268,8 @@ export default function BoxScreen() {
           <View key={i} style={s.itemRow}>
             <TextInput
               value={it.name}
-              onChangeText={(name) => setItems((items) => items.map((x, j) => (j === i ? { ...x, name } : x)))}
+              onChangeText={(name) => setItems((items) => items.map((x, j) => (j === i ? { ...x, name: oneLine(name) } : x)))}
+              {...wrapOnAndroid}
               style={[s.itemInput, { flex: 1 }]}
             />
             <TextInput
@@ -346,6 +347,15 @@ function Photos({ box }: { box: Box }) {
   );
 }
 
+// Android scrolls an overflowing single-line TextInput to its end, so long names show up
+// clipped at the start ("ellow instant noodle bowl"). Let them wrap instead; Enter still
+// just blurs, and pasted newlines are flattened by oneLine().
+const wrapOnAndroid =
+  Platform.OS === 'android'
+    ? ({ multiline: true, scrollEnabled: false, submitBehavior: 'blurAndSubmit', textAlignVertical: 'center' } as const)
+    : {};
+const oneLine = (v: string) => v.replace(/[\r\n]+/g, ' ');
+
 const s = StyleSheet.create({
   kicker: { fontSize: 14, fontWeight: '700', color: colors.kraftDark, textTransform: 'uppercase', letterSpacing: 0.8 },
   titleInput: {
@@ -363,6 +373,7 @@ const s = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.sm,
     paddingHorizontal: space(3),
+    paddingVertical: space(2),
     fontSize: 16,
     color: colors.ink,
     backgroundColor: colors.card,

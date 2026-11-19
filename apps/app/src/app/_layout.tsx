@@ -1,5 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Stack } from 'expo-router';
+import { Platform } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -23,8 +24,14 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          header: (props) => <TopBar {...props} />,
+          headerStyle: { backgroundColor: colors.bg },
+          headerShadowVisible: false,
+          headerTintColor: colors.kraftDark,
+          headerTitleStyle: { color: colors.ink, fontWeight: '700' },
+          headerTitleAlign: 'center',
           contentStyle: { backgroundColor: colors.bg },
+          // The native header can't be confined to the page column on wide web screens; TopBar can.
+          ...(Platform.OS === 'web' && { header: (props) => <TopBar {...props} /> }),
         }}>
         <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
         <Stack.Screen name="new" options={{ title: 'New box' }} />

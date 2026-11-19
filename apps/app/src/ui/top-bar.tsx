@@ -5,8 +5,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, MAX_WIDTH, space } from './theme';
 
 /**
- * Stack header that lines up with the page: same centred MAX_WIDTH column as <Screen>,
- * title centred, back button at the column's left edge (not the window's) on wide web screens.
+ * Web-only stack header that lines up with the page: same centred MAX_WIDTH column as <Screen>,
+ * title centred, back button at the column's left edge (not the window's) on wide screens.
+ * iOS/Android use the native stack header (see _layout.tsx).
  */
 export function TopBar({ navigation, options, route, back }: NativeStackHeaderProps) {
   const insets = useSafeAreaInsets();

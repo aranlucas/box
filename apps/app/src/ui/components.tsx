@@ -14,10 +14,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, MAX_WIDTH, radius, space } from './theme';
 
-export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
+/**
+ * Page body. The stack header already sits below the status bar, so screens under it must not
+ * add the top inset again (a second inset leaves a blank band that clips scrolled content).
+ * Pass `safeTop` only on screens with `headerShown: false`.
+ */
+export function Screen({ children, scroll = true, safeTop = false }: { children: ReactNode; scroll?: boolean; safeTop?: boolean }) {
   const inner = <View style={styles.inner}>{children}</View>;
   return (
-    <SafeAreaView style={styles.screen} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.screen} edges={safeTop ? ['top', 'left', 'right'] : ['left', 'right']}>
       {scroll ? (
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {inner}
