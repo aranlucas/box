@@ -9,7 +9,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
   type ScrollViewProps,
   type ViewStyle,
@@ -17,7 +16,7 @@ import {
 import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, MAX_WIDTH, radius, space, TAP } from './theme';
+import { colors, pageColumn, radius, space, TAP } from './theme';
 
 type Refresh = {
   /** Enables pull-to-refresh. */
@@ -114,9 +113,10 @@ export function ListScreen<T>({
   ...refresh
 }: ListScreenProps<T>) {
   const scrolling = useScrolling(refresh);
-  // Side padding centres the content and keeps the whole screen width scrollable on web.
-  const { width } = useWindowDimensions();
-  const side = space(4) + Math.max(0, (width - MAX_WIDTH) / 2);
+  // The list stays full width so the whole window scrolls on web; the header and each row sit in
+  // the page column. Padding the list can't centre them: LegendList's web build hands
+  // contentContainerStyle to a plain <div> (so `paddingHorizontal` is dropped) and pins rows at
+  // left/right 0.
   return (
     <SafeAreaView style={styles.screen} edges={edges(true)}>
       <LegendList
@@ -124,15 +124,11 @@ export function ListScreen<T>({
         recycleItems
         data={data}
         keyExtractor={keyExtractor}
-        renderItem={renderItem}
+        renderItem={(props) => <View style={styles.listColumn}>{renderItem(props)}</View>}
         ItemSeparatorComponent={RowGap}
-        ListHeaderComponent={header}
+        ListHeaderComponent={<View style={styles.listColumn}>{header}</View>}
         ListHeaderComponentStyle={styles.listHeader}
-        contentContainerStyle={{
-          paddingTop: space(4),
-          paddingHorizontal: side,
-          ...scrolling.bottom,
-        }}
+        contentContainerStyle={{ paddingTop: space(4), ...scrolling.bottom }}
       />
     </SafeAreaView>
   );
@@ -322,14 +318,8 @@ export function BoxKicker({ box }: { box: Pick<BoxRow, 'room' | 'status'> }) {
 export const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   scroll: { flexGrow: 1 },
-  column: {
-    width: '100%',
-    maxWidth: MAX_WIDTH,
-    alignSelf: 'center',
-    padding: space(4),
-    gap: space(4),
-    flexGrow: 1,
-  },
+  column: { ...pageColumn, paddingVertical: space(4), gap: space(4), flexGrow: 1 },
+  listColumn: pageColumn,
   // Rows sit closer together than the sections of a page.
   rowGap: { height: space(2) },
   listHeader: { marginBottom: space(2) },
@@ -340,13 +330,7 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingTop: space(3),
   },
-  footerColumn: {
-    width: '100%',
-    maxWidth: MAX_WIDTH,
-    alignSelf: 'center',
-    paddingHorizontal: space(4),
-    gap: space(2),
-  },
+  footerColumn: { ...pageColumn, gap: space(2) },
   button: {
     minHeight: 48,
     paddingHorizontal: space(5),
