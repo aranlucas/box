@@ -1,0 +1,25 @@
+{
+  "name": "worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy",
+    "migrate": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations",
+    "migrate:local": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations --local",
+    "typecheck": "cf workers types && tsc"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "ai": "^6.0.0",
+    "hono": "^4.10.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "beta",
+    "cf": "^1.0.0-beta.26",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.0"
+  }
+}
