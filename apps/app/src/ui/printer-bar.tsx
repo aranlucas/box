@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { connectPrinter, disconnectPrinter, printerHelp, tryReconnect, usePrinter } from '@/lib/printer';
 
@@ -36,7 +36,7 @@ export function PrinterBar() {
           <View style={[s.dot, { backgroundColor: connected ? colors.green : colors.muted }]} />
           <Text style={s.chipText}>{label}</Text>
         </Pressable>
-        {!connected && Platform.OS === 'web' ? (
+        {!connected ? (
           <Pressable onPress={() => connectPrinter({ acceptAll: true })}>
             <Text style={s.link}>Printer not listed?</Text>
           </Pressable>

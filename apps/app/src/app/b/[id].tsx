@@ -1,7 +1,7 @@
 import { titleLayout } from '@mj/label';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, boxUrl, getHouseholdKey, photoUrl, type Box, type Item } from '@/lib/api';
 import { takeBoxPhoto } from '@/lib/photo';
@@ -118,9 +118,19 @@ export default function BoxScreen() {
 
   async function remove() {
     if (!box) return;
-    if (Platform.OS === 'web' && !window.confirm(`Delete box #${box.number}? This cannot be undone.`)) return;
-    await api.deleteBox(box.id);
-    router.replace('/');
+    const doDelete = async () => {
+      await api.deleteBox(box.id);
+      router.replace('/');
+    };
+    const msg = `Delete box #${box.number}? This cannot be undone.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(msg)) await doDelete();
+      return;
+    }
+    Alert.alert('Delete box', msg, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: doDelete },
+    ]);
   }
 
   const setItems = (fn: (items: Item[]) => Item[]) => setDraft((d) => (d ? { ...d, items: fn(d.items) } : d));
