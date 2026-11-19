@@ -14,7 +14,8 @@
     "@ai-sdk/openai": "^3.0.0",
     "ai": "^6.0.0",
     "hono": "^4.10.0",
-    "zod": "^4.1.0"
+    "zod": "^4.1.0",
+    "@mj/label": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "beta",

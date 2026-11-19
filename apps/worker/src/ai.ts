@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, Output } from "ai";
+import { titleLayout } from "@mj/label";
 import { z } from "zod";
 
 /** Max title length; set by the label's text budget (2 lines × ~14 chars, uppercase). */
@@ -9,7 +10,7 @@ const extractionSchema = z.object({
   title: z
     .string()
     .describe(
-      `A 2-4 word label for the box, max ${TITLE_MAX} characters, e.g. "Kitchen glassware" or "Kids books & games".`,
+      `A short label for the box: 1-3 words, max 20 characters total, no word longer than 12 characters. Printed on a tiny label in two lines of 12 characters. e.g. "Kitchen glassware", "Kids books & games", "Bathroom".`,
     ),
   room: z
     .string()
@@ -64,7 +65,16 @@ export async function extractContents(opts: {
 
   return {
     ...output,
-    title: output.title.trim().slice(0, TITLE_MAX),
+    title: fitTitle(output.title),
     items: output.items.filter((i) => i.name.trim()).map((i) => ({ ...i, name: i.name.trim() })),
   };
+}
+
+/** Make sure the title fits the printed label; drop leading words (adjectives) until it does. */
+export function fitTitle(raw: string): string {
+  let words = raw.trim().replace(/\s+/g, " ").split(" ").filter(Boolean);
+  while (words.length > 1 && !titleLayout(words.join(" ")).fits) words = words.slice(1);
+  const t = words.join(" ");
+  const fitted = titleLayout(t).fits ? t : t.slice(0, 12);
+  return fitted.charAt(0).toUpperCase() + fitted.slice(1);
 }

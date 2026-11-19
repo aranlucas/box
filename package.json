@@ -5,6 +5,6 @@
   "scripts": {
     "test": "pnpm -r test",
     "build:web": "pnpm --filter app export:web",
-    "deploy": "pnpm build:web && pnpm --filter worker deploy"
+    "deploy": "pnpm build:web && pnpm --filter worker exec cf deploy --secrets-file .dev.vars"
   }
 }

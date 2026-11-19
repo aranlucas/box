@@ -104,6 +104,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.144(zod@4.6.7)
+      '@mj/label':
+        specifier: workspace:*
+        version: link:../../packages/label
       ai:
         specifier: ^6.0.0
         version: 6.0.333(zod@4.6.7)
