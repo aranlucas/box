@@ -1,6 +1,7 @@
-import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
+import { generateKeyPair, SignJWT } from "jose";
+import { AuthorizationResponseError } from "oauth4webapi";
 import { beforeAll, describe, expect, test } from "vitest";
-import { authorizeUrl, exchangeCode, ISSUER, REDIRECT_URI, verifyIdToken, withUserInfo } from "../src/auth/oidc.ts";
+import { authorizeUrl, authServer, completeSignIn, ISSUER, newSignIn, REDIRECT_URI } from "../src/auth/oidc.ts";
 import { s256, safeReturnPath } from "../src/util.ts";
 
 describe("safeReturnPath", () => {
@@ -20,141 +21,154 @@ test("s256 matches the RFC 7636 test vector", async () => {
   expect(await s256("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
 });
 
-test("authorizeUrl targets the auth service with PKCE and the exact redirect URI", () => {
-  const u = new URL(authorizeUrl({ state: "st", nonce: "no", challenge: "ch", clientId: "cid" }));
-  expect(u.origin + u.pathname).toBe(`${ISSUER}/oauth2/authorize`);
-  expect(Object.fromEntries(u.searchParams)).toMatchObject({
-    response_type: "code",
-    client_id: "cid",
-    redirect_uri: "https://bx.aranlucas.workers.dev/auth/callback",
-    scope: "openid profile email",
-    state: "st",
-    nonce: "no",
-    code_challenge: "ch",
-    code_challenge_method: "S256",
-  });
-  expect(REDIRECT_URI).toBe("https://bx.aranlucas.workers.dev/auth/callback");
-});
+const CLIENT = { clientId: "cid", clientSecret: "sec" };
+const PENDING = { state: "st", nonce: "n1", verifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk" };
+const callback = (params: Record<string, string>) =>
+  new URL(`${REDIRECT_URI}?${new URLSearchParams({ code: "c1", state: "st", iss: ISSUER, ...params })}`);
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-test("exchangeCode posts the code and verifier with HTTP Basic client auth", async () => {
-  let seen: { url: string; init: RequestInit } | undefined;
-  const fetchImpl = (async (url: string, init: RequestInit) => {
-    seen = { url, init };
-    return new Response(JSON.stringify({ id_token: "tok", access_token: "at", scope: "openid profile email" }), {
-      headers: { "content-type": "application/json" },
-    });
+/** A fake auth service: discovery, token and userinfo endpoints, recording every call. */
+function fakeAuthService(opts: { idToken: () => Promise<string>; userinfo?: () => Response; token?: () => Response }) {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const fetchImpl = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = input instanceof Request ? input.url : String(input);
+    calls.push({ url, init });
+    if (url === `${ISSUER}/.well-known/openid-configuration`) {
+      return json({
+        issuer: ISSUER,
+        authorization_endpoint: `${ISSUER}/oauth2/authorize`,
+        token_endpoint: `${ISSUER}/oauth2/token`,
+        userinfo_endpoint: `${ISSUER}/oauth2/userinfo`,
+        jwks_uri: `${ISSUER}/jwks`,
+        id_token_signing_alg_values_supported: ["RS256"],
+        authorization_response_iss_parameter_supported: true,
+      });
+    }
+    if (url === `${ISSUER}/oauth2/token`) {
+      return opts.token?.() ?? json({ access_token: "at", token_type: "Bearer", expires_in: 3600, id_token: await opts.idToken() });
+    }
+    if (url === `${ISSUER}/oauth2/userinfo`) return opts.userinfo?.() ?? json({ sub: "user-123" });
+    return new Response("not found", { status: 404 });
   }) as unknown as typeof fetch;
-  const res = await exchangeCode({ code: "c1", verifier: "v1", clientId: "cid", clientSecret: "sec" }, fetchImpl);
-  expect(res).toEqual({ id_token: "tok", access_token: "at", scope: "openid profile email" });
-  expect(seen!.url).toBe(`${ISSUER}/oauth2/token`);
-  expect(new Headers(seen!.init.headers).get("authorization")).toBe(`Basic ${btoa("cid:sec")}`);
-  const body = new URLSearchParams(seen!.init.body as string);
-  expect(Object.fromEntries(body)).toEqual({
-    grant_type: "authorization_code",
-    code: "c1",
-    code_verifier: "v1",
-    redirect_uri: "https://bx.aranlucas.workers.dev/auth/callback",
-  });
-});
+  return { calls, fetchImpl };
+}
 
-test("exchangeCode surfaces token endpoint errors", async () => {
-  const fetchImpl = (async () => new Response('{"error":"invalid_grant"}', { status: 400 })) as unknown as typeof fetch;
-  await expect(exchangeCode({ code: "c", verifier: "v", clientId: "a", clientSecret: "b" }, fetchImpl)).rejects.toThrow(
-    /invalid_grant/,
-  );
-});
-
-describe("withUserInfo", () => {
-  const userinfo = (body: unknown, status = 200) => {
-    const calls: { url: string; auth: string | null }[] = [];
-    const fetchImpl = (async (url: string, init: RequestInit) => {
-      calls.push({ url, auth: new Headers(init.headers).get("authorization") });
-      return new Response(JSON.stringify(body), { status });
-    }) as unknown as typeof fetch;
-    return { calls, fetchImpl };
-  };
-
-  test("fills name and email from userinfo when the ID token lacks them", async () => {
-    const { calls, fetchImpl } = userinfo({ sub: "u1", name: "Ada", email: "ada@example.com" });
-    expect(await withUserInfo({ sub: "u1" }, "at", fetchImpl)).toEqual({ sub: "u1", name: "Ada", email: "ada@example.com" });
-    expect(calls).toEqual([{ url: `${ISSUER}/oauth2/userinfo`, auth: "Bearer at" }]);
-  });
-
-  test("ignores userinfo for a different subject", async () => {
-    const { fetchImpl } = userinfo({ sub: "someone-else", name: "Eve" });
-    expect(await withUserInfo({ sub: "u1" }, "at", fetchImpl)).toEqual({ sub: "u1" });
-  });
-
-  test("keeps the ID token identity when userinfo fails", async () => {
-    const { fetchImpl } = userinfo({ error: "invalid_token" }, 401);
-    expect(await withUserInfo({ sub: "u1", name: "Ada" }, "at", fetchImpl)).toEqual({ sub: "u1", name: "Ada" });
-    const throwing = (async () => {
-      throw new Error("network");
-    }) as unknown as typeof fetch;
-    expect(await withUserInfo({ sub: "u1" }, "at", throwing)).toEqual({ sub: "u1" });
-  });
-
-  test("skips the call when the ID token is complete or there is no access token", async () => {
-    const { calls, fetchImpl } = userinfo({});
-    await withUserInfo({ sub: "u1", name: "Ada", email: "a@x" }, "at", fetchImpl);
-    await withUserInfo({ sub: "u1" }, undefined, fetchImpl);
-    expect(calls).toHaveLength(0);
-  });
-});
-
-describe("verifyIdToken", () => {
-  let sign: (claims: Record<string, unknown>, opts?: { exp?: string; aud?: string; iss?: string }) => Promise<string>;
-  let jwks: ReturnType<typeof createLocalJWKSet>;
+describe("sign-in with the auth service", () => {
+  let sign: (claims: Record<string, unknown>, o?: { aud?: string; iss?: string; exp?: string }) => Promise<string>;
 
   beforeAll(async () => {
-    const { publicKey, privateKey } = await generateKeyPair("RS256");
-    const jwk = { ...(await exportJWK(publicKey)), kid: "k1", alg: "RS256" };
-    jwks = createLocalJWKSet({ keys: [jwk] });
-    sign = (claims, opts = {}) =>
+    const { privateKey } = await generateKeyPair("RS256");
+    sign = (claims, o = {}) =>
       new SignJWT(claims)
         .setProtectedHeader({ alg: "RS256", kid: "k1" })
-        .setIssuer(opts.iss ?? ISSUER)
-        .setAudience(opts.aud ?? "cid")
+        .setIssuer(o.iss ?? ISSUER)
+        .setAudience(o.aud ?? "cid")
         .setSubject("user-123")
         .setIssuedAt()
-        .setExpirationTime(opts.exp ?? "5m")
+        .setExpirationTime(o.exp ?? "5m")
         .sign(privateKey);
   });
 
-  test("accepts a valid token and returns identity", async () => {
-    const t = await sign({ nonce: "n1", email: "a@b.c", name: "Ada" });
-    expect(await verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).toEqual({
-      sub: "user-123",
-      email: "a@b.c",
-      name: "Ada",
+  test("authorizeUrl targets the discovered endpoint with PKCE and the exact redirect URI", async () => {
+    const { fetchImpl } = fakeAuthService({ idToken: () => sign({}) });
+    const u = new URL(await authorizeUrl(await authServer(fetchImpl), CLIENT, PENDING));
+    expect(u.origin + u.pathname).toBe(`${ISSUER}/oauth2/authorize`);
+    expect(Object.fromEntries(u.searchParams)).toEqual({
+      response_type: "code",
+      client_id: "cid",
+      redirect_uri: "https://bx.aranlucas.workers.dev/auth/callback",
+      scope: "openid profile email",
+      state: "st",
+      nonce: "n1",
+      // RFC 7636 Appendix B test vector for this verifier.
+      code_challenge: "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+      code_challenge_method: "S256",
     });
   });
-  test("rejects the wrong audience", async () => {
-    const t = await sign({ nonce: "n1" }, { aud: "other" });
-    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).rejects.toThrow();
+
+  test("newSignIn returns distinct random values", () => {
+    const a = newSignIn();
+    const b = newSignIn();
+    expect(new Set([a.state, a.nonce, a.verifier, b.state, b.nonce, b.verifier]).size).toBe(6);
   });
-  test("rejects the wrong issuer", async () => {
-    const t = await sign({ nonce: "n1" }, { iss: "https://evil.example" });
-    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).rejects.toThrow();
+
+  test("exchanges the code with HTTP Basic auth and PKCE, then reads name/email from userinfo", async () => {
+    const { calls, fetchImpl } = fakeAuthService({
+      idToken: () => sign({ nonce: "n1" }),
+      userinfo: () => json({ sub: "user-123", name: "Ada", email: "ada@example.com" }),
+    });
+    const as = await authServer(fetchImpl);
+    const identity = await completeSignIn(as, CLIENT, callback({}), PENDING, fetchImpl);
+    expect(identity).toEqual({ sub: "user-123", name: "Ada", email: "ada@example.com" });
+
+    const token = calls.find((c) => c.url === `${ISSUER}/oauth2/token`)!;
+    expect(new Headers(token.init.headers).get("authorization")).toBe(`Basic ${btoa("cid:sec")}`);
+    expect(Object.fromEntries(new URLSearchParams(String(token.init.body)))).toEqual({
+      grant_type: "authorization_code",
+      code: "c1",
+      code_verifier: PENDING.verifier,
+      redirect_uri: "https://bx.aranlucas.workers.dev/auth/callback",
+    });
+    const userinfo = calls.find((c) => c.url === `${ISSUER}/oauth2/userinfo`)!;
+    expect(new Headers(userinfo.init.headers).get("authorization")).toBe("Bearer at");
   });
-  test("rejects a nonce mismatch", async () => {
-    const t = await sign({ nonce: "other" });
-    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).rejects.toThrow(/nonce/);
+
+  test("skips userinfo when the ID token already has name and email", async () => {
+    const { calls, fetchImpl } = fakeAuthService({ idToken: () => sign({ nonce: "n1", name: "Ada", email: "a@b.c" }) });
+    const identity = await completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl);
+    expect(identity).toEqual({ sub: "user-123", name: "Ada", email: "a@b.c" });
+    expect(calls.some((c) => c.url.endsWith("/oauth2/userinfo"))).toBe(false);
   });
-  test("rejects a token without exp", async () => {
-    const { publicKey, privateKey } = await generateKeyPair("RS256");
-    const jwk = { ...(await exportJWK(publicKey)), kid: "k2", alg: "RS256" };
-    const t = await new SignJWT({ nonce: "n1" })
-      .setProtectedHeader({ alg: "RS256", kid: "k2" })
-      .setIssuer(ISSUER)
-      .setAudience("cid")
-      .setSubject("u")
-      .setIssuedAt()
-      .sign(privateKey);
-    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks: createLocalJWKSet({ keys: [jwk] }) })).rejects.toThrow();
+
+  test("ignores userinfo for a different subject", async () => {
+    const { fetchImpl } = fakeAuthService({
+      idToken: () => sign({ nonce: "n1" }),
+      userinfo: () => json({ sub: "someone-else", name: "Eve", email: "eve@example.com" }),
+    });
+    expect(await completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl)).toEqual({ sub: "user-123" });
   });
-  test("rejects an expired token", async () => {
-    const t = await sign({ nonce: "n1" }, { exp: "-10m" });
-    await expect(verifyIdToken(t, { clientId: "cid", nonce: "n1", jwks })).rejects.toThrow();
+
+  test("still signs in when userinfo fails", async () => {
+    const { fetchImpl } = fakeAuthService({
+      idToken: () => sign({ nonce: "n1" }),
+      userinfo: () => json({ error: "invalid_token" }, 401),
+    });
+    expect(await completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl)).toEqual({ sub: "user-123" });
+  });
+
+  test("surfaces an error the auth service redirected back with", async () => {
+    const { fetchImpl } = fakeAuthService({ idToken: () => sign({ nonce: "n1" }) });
+    const err = await completeSignIn(await authServer(fetchImpl), CLIENT, callback({ error: "access_denied" }), PENDING, fetchImpl).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(AuthorizationResponseError);
+    expect((err as AuthorizationResponseError).error).toBe("access_denied");
+  });
+
+  test.each([
+    ["a different state", { state: "other" }],
+    ["a different issuer on the redirect", { iss: "https://evil.example" }],
+  ])("rejects a redirect with %s before calling the token endpoint", async (_name, params) => {
+    const { calls, fetchImpl } = fakeAuthService({ idToken: () => sign({ nonce: "n1" }) });
+    await expect(completeSignIn(await authServer(fetchImpl), CLIENT, callback(params), PENDING, fetchImpl)).rejects.toThrow();
+    expect(calls.some((c) => c.url.endsWith("/oauth2/token"))).toBe(false);
+  });
+
+  test.each([
+    ["the wrong audience", () => sign({ nonce: "n1" }, { aud: "other" })],
+    ["the wrong issuer", () => sign({ nonce: "n1" }, { iss: "https://evil.example" })],
+    ["a nonce mismatch", () => sign({ nonce: "other" })],
+    ["an expired token", () => sign({ nonce: "n1" }, { exp: "-10m" })],
+  ])("rejects an ID token with %s", async (_name, idToken) => {
+    const { fetchImpl } = fakeAuthService({ idToken });
+    await expect(completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl)).rejects.toThrow();
+  });
+
+  test("surfaces token endpoint errors", async () => {
+    const { fetchImpl } = fakeAuthService({ idToken: () => sign({}), token: () => json({ error: "invalid_grant" }, 400) });
+    await expect(completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl)).rejects.toThrow(
+      /invalid_grant|server responded/,
+    );
   });
 });

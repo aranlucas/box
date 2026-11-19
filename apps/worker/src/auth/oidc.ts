@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import * as oauth from "oauth4webapi";
 
 declare const __BX_OIDC_ISSUER__: string | undefined;
 const ISSUER_OVERRIDE = typeof __BX_OIDC_ISSUER__ === "string" ? __BX_OIDC_ISSUER__ : "";
@@ -6,99 +6,114 @@ export const ISSUER = ISSUER_OVERRIDE || "https://auth.aranlucas.workers.dev/api
 export const REDIRECT_URI = "https://bx.aranlucas.workers.dev/auth/callback";
 const SCOPE = "openid profile email";
 
-let remoteJwks: JWTVerifyGetKey | undefined;
+export type Identity = { sub: string; email?: string; name?: string };
+export type OidcClient = { clientId: string; clientSecret: string };
+/** Values saved when sign-in started, checked when the auth service redirects back. */
+export type PendingSignIn = { state: string; nonce: string; verifier: string };
 
-export function authorizeUrl(p: { state: string; nonce: string; challenge: string; clientId: string }): string {
-  const u = new URL(`${ISSUER}/oauth2/authorize`);
+// Local dev may point at an http:// auth service (BX_OIDC_ISSUER); production is always https.
+const insecure = ISSUER.startsWith("http://");
+
+function requestOptions(fetchImpl?: typeof fetch) {
+  return {
+    ...(fetchImpl ? { [oauth.customFetch]: fetchImpl } : {}),
+    ...(insecure ? { [oauth.allowInsecureRequests]: true } : {}),
+  };
+}
+
+const clientOf = (c: Pick<OidcClient, "clientId">): oauth.Client => ({ client_id: c.clientId });
+
+let discovered: Promise<oauth.AuthorizationServer> | undefined;
+
+/** The auth service's OIDC metadata, fetched once per isolate (and again after a failure). */
+export function authServer(fetchImpl?: typeof fetch): Promise<oauth.AuthorizationServer> {
+  if (fetchImpl) return discover(fetchImpl);
+  discovered ??= discover().catch((err) => {
+    discovered = undefined;
+    throw err;
+  });
+  return discovered;
+}
+
+async function discover(fetchImpl?: typeof fetch): Promise<oauth.AuthorizationServer> {
+  const issuer = new URL(ISSUER);
+  const res = await oauth.discoveryRequest(issuer, { algorithm: "oidc", ...requestOptions(fetchImpl) });
+  return oauth.processDiscoveryResponse(issuer, res);
+}
+
+/** Fresh state, nonce and PKCE verifier for one sign-in attempt. */
+export function newSignIn(): PendingSignIn {
+  return { state: oauth.generateRandomState(), nonce: oauth.generateRandomNonce(), verifier: oauth.generateRandomCodeVerifier() };
+}
+
+export async function authorizeUrl(as: oauth.AuthorizationServer, client: Pick<OidcClient, "clientId">, p: PendingSignIn) {
+  const u = new URL(as.authorization_endpoint!);
   u.search = new URLSearchParams({
     response_type: "code",
-    client_id: p.clientId,
+    client_id: client.clientId,
     redirect_uri: REDIRECT_URI,
     scope: SCOPE,
     state: p.state,
     nonce: p.nonce,
-    code_challenge: p.challenge,
+    code_challenge: await oauth.calculatePKCECodeChallenge(p.verifier),
     code_challenge_method: "S256",
   }).toString();
   return u.toString();
 }
 
-export async function exchangeCode(
-  p: { code: string; verifier: string; clientId: string; clientSecret: string },
-  fetchImpl: typeof fetch = fetch,
-): Promise<{ id_token: string; access_token?: string; scope?: string }> {
-  const res = await fetchImpl(`${ISSUER}/oauth2/token`, {
-    method: "POST",
-    headers: {
-      authorization: `Basic ${btoa(`${p.clientId}:${p.clientSecret}`)}`,
-      "content-type": "application/x-www-form-urlencoded",
-      accept: "application/json",
-    },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code: p.code,
-      code_verifier: p.verifier,
-      redirect_uri: REDIRECT_URI,
-    }).toString(),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Token exchange failed (${res.status}): ${text.slice(0, 200)}`);
-  const body = JSON.parse(text) as { id_token?: string; access_token?: string; scope?: string };
-  if (!body.id_token) throw new Error("Token response had no id_token");
-  return { id_token: body.id_token, access_token: body.access_token, scope: body.scope };
+/**
+ * Finish sign-in: check the redirect (state, iss, error), swap the code for tokens, validate the
+ * ID token (issuer, audience, expiry, nonce), and fill in name/email from userinfo.
+ * Throws oauth.AuthorizationResponseError when the auth service redirected back with an error.
+ */
+export async function completeSignIn(
+  as: oauth.AuthorizationServer,
+  client: OidcClient,
+  callbackUrl: URL,
+  pending: PendingSignIn,
+  fetchImpl?: typeof fetch,
+): Promise<Identity> {
+  const c = clientOf(client);
+  const params = oauth.validateAuthResponse(as, c, callbackUrl, pending.state);
+  const res = await oauth.authorizationCodeGrantRequest(
+    as,
+    c,
+    oauth.ClientSecretBasic(client.clientSecret),
+    params,
+    REDIRECT_URI,
+    pending.verifier,
+    requestOptions(fetchImpl),
+  );
+  const tokens = await oauth.processAuthorizationCodeResponse(as, c, res, { expectedNonce: pending.nonce, requireIdToken: true });
+  const claims = oauth.getValidatedIdTokenClaims(tokens)!;
+  const identity: Identity = { sub: claims.sub };
+  if (typeof claims.email === "string" && claims.email) identity.email = claims.email;
+  if (typeof claims.name === "string" && claims.name) identity.name = claims.name;
+  if (identity.name && identity.email) return identity;
+  return withUserInfo(as, c, identity, tokens.access_token, fetchImpl);
 }
 
-export type Identity = { sub: string; email?: string; name?: string };
-
 /**
- * The auth service leaves name/email out of the ID token, so ask its userinfo endpoint.
- * Best effort: any failure (or a userinfo response for a different subject) just keeps `identity`.
+ * The auth service leaves name/email out of the ID token (they're served from userinfo), so ask
+ * for them there. Best effort: any failure, including a response for another subject, keeps `identity`.
  */
-export async function withUserInfo(
+async function withUserInfo(
+  as: oauth.AuthorizationServer,
+  client: oauth.Client,
   identity: Identity,
-  accessToken: string | undefined,
-  fetchImpl: typeof fetch = fetch,
+  accessToken: string,
+  fetchImpl?: typeof fetch,
 ): Promise<Identity> {
-  if (!accessToken || (identity.name && identity.email)) return identity;
   try {
-    const res = await fetchImpl(`${ISSUER}/oauth2/userinfo`, {
-      headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
-    });
-    if (!res.ok) {
-      console.warn(`userinfo failed (${res.status})`);
-      return identity;
-    }
-    const info = (await res.json()) as Record<string, unknown>;
-    if (info.sub !== identity.sub) {
-      console.warn("userinfo subject mismatch; ignoring");
-      return identity;
-    }
+    const res = await oauth.userInfoRequest(as, client, accessToken, requestOptions(fetchImpl));
+    const info = await oauth.processUserInfoResponse(as, client, identity.sub, res);
     const out = { ...identity };
     if (!out.email && typeof info.email === "string" && info.email) out.email = info.email;
     if (!out.name && typeof info.name === "string" && info.name) out.name = info.name;
     if (!out.name || !out.email) console.warn(`userinfo missing name/email; claims: ${Object.keys(info).join(",")}`);
     return out;
   } catch (err) {
-    console.warn(`userinfo error: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn(`userinfo failed: ${err instanceof Error ? err.message : String(err)}`);
     return identity;
   }
-}
-
-export async function verifyIdToken(
-  idToken: string,
-  p: { clientId: string; nonce: string; jwks?: JWTVerifyGetKey },
-): Promise<Identity> {
-  const jwks = p.jwks ?? (remoteJwks ??= createRemoteJWKSet(new URL(`${ISSUER}/jwks`)));
-  const { payload } = await jwtVerify(idToken, jwks, {
-    issuer: ISSUER,
-    audience: p.clientId,
-    algorithms: ["RS256"],
-    requiredClaims: ["exp", "iat", "sub"],
-  });
-  if (payload.nonce !== p.nonce) throw new Error("ID token nonce mismatch");
-  if (!payload.sub) throw new Error("ID token has no subject");
-  const out: Identity = { sub: payload.sub };
-  if (typeof payload.email === "string") out.email = payload.email;
-  if (typeof payload.name === "string") out.name = payload.name;
-  return out;
 }
