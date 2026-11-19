@@ -1,7 +1,7 @@
 // Native (Android) printer: Phomemo D30 over BLE via react-native-ble-plx.
 // Same print job bytes as the web build (from @mj/label); only the transport differs.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { buildJob, chunks, type LabelInput, type Rotation } from '@mj/label';
+import { buildJob, checkD30Media, chunks, type LabelInput, type Rotation } from '@mj/label';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, State, type Device } from 'react-native-ble-plx';
 
@@ -9,6 +9,7 @@ import { createPrinterStore } from './printer-store';
 
 const SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 const WRITE_CHAR = '0000ff02-0000-1000-8000-00805f9b34fb';
+const NOTIFY_CHAR = '0000ff03-0000-1000-8000-00805f9b34fb';
 const DEVICE_KEY = 'printer-device-id';
 const SCAN_MS = 10_000;
 
@@ -154,27 +155,36 @@ export function disconnectPrinter() {
   d?.cancelConnection().catch(() => {});
 }
 
-async function write(bytes: Uint8Array) {
-  if (!device) throw new Error('Printer not connected');
-  await device.writeCharacteristicWithResponseForService(SERVICE, WRITE_CHAR, toBase64(bytes));
-}
-
 /**
  * Print on this device's printer. With `connect: false` (used when printing a job relayed from
  * another device in the house) it never opens a picker or scans: it prints only if already connected.
  */
-export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean } = {}) {
-  const { rotation = 'cw', connect = true } = opts;
+export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean; checkMedia?: boolean } = {}) {
+  const { rotation = 'cw', connect = true, checkMedia = false } = opts;
   if (connect && !(await isConnected())) {
     await tryReconnect();
     if (!(await isConnected())) await connectPrinter();
   }
   if (!(await isConnected())) throw new Error(store.get().error ?? 'Printer not connected');
+  const printer = device;
+  if (!printer) throw new Error('Printer not connected');
+  const write = async (bytes: Uint8Array) => {
+    await printer.writeCharacteristicWithResponseForService(SERVICE, WRITE_CHAR, toBase64(bytes));
+  };
 
   store.set({ status: 'printing', error: undefined });
   try {
     const wait = 500 - (Date.now() - lastJobAt); // printer needs a breather between jobs
     if (wait > 0) await sleep(wait);
+    if (checkMedia && isD30(printer)) {
+      await checkD30Media(write, (onPacket) => {
+        const subscription = printer.monitorCharacteristicForService(SERVICE, NOTIFY_CHAR, (error, characteristic) => {
+          if (error) onPacket(undefined);
+          else if (characteristic?.value) onPacket(Uint8Array.from(atob(characteristic.value), (byte) => byte.charCodeAt(0)));
+        });
+        return () => subscription.remove();
+      });
+    }
     const job = buildJob(input, rotation);
     await write(job.header);
     for (const c of chunks(job.data, chunkSize)) await write(c);

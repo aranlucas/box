@@ -48,8 +48,8 @@ export function disconnectPrinter() {
  * Print on this device's printer. With `connect: false` (used when printing a job relayed from
  * another device in the house) it never opens a picker or scans: it prints only if already connected.
  */
-export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean } = {}) {
-  const { rotation = 'cw', connect = true } = opts;
+export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean; checkMedia?: boolean } = {}) {
+  const { rotation = 'cw', connect = true, checkMedia = false } = opts;
   if (connect && !conn?.connected()) {
     await tryReconnect();
     if (!conn?.connected()) await connectPrinter();
@@ -57,11 +57,11 @@ export async function printLabel(input: LabelInput, opts: { rotation?: Rotation;
   if (!conn?.connected()) throw new Error('Printer not connected');
   store.set({ status: 'printing', error: undefined });
   try {
-    await conn.print(buildJob(input, rotation));
+    await conn.print(buildJob(input, rotation), { checkMedia });
     store.set({ status: 'connected' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    store.set({ status: conn.connected() ? 'connected' : 'disconnected', error: msg });
+    store.set({ status: conn?.connected() ? 'connected' : 'disconnected', error: msg });
     throw err;
   }
 }
