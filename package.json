@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.18.0",
   "scripts": {
     "prepare": "husky",
-    "check:pr-title": "node scripts/check-conventional-title.mjs",
+    "check:pr-title": "commitlint",
     "lint": "pnpm --filter worker types && oxlint --deny-warnings",
     "lint:fix": "pnpm lint --fix",
     "format": "oxfmt",
@@ -15,7 +15,14 @@
     "build:web": "pnpm --filter app export:web",
     "deploy": "pnpm build:web && pnpm --filter worker exec cf deploy --secrets-file .dev.vars"
   },
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
   "devDependencies": {
+    "@commitlint/cli": "21.2.4",
+    "@commitlint/config-conventional": "21.2.4",
     "eslint-import-resolver-typescript": "3.10.1",
     "eslint-plugin-expo": "1.2.1",
     "eslint-plugin-import": "2.32.0",
