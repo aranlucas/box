@@ -168,7 +168,7 @@ async function serve(houseId: string, job: QueuedJob, deviceId: string) {
     return; // another device took it, or it expired
   }
   try {
-    await serialized(() => printLabel(job.label, { connect: false }));
+    await serialized(() => printLabel(job.label, { connect: false, checkMedia: true }));
     await api.completePrintJob(houseId, job.id, deviceId, { ok: true }).catch(() => {});
   } catch (e) {
     await api.completePrintJob(houseId, job.id, deviceId, { ok: false, error: errMsg(e) }).catch(() => {});

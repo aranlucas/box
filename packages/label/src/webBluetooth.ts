@@ -1,15 +1,17 @@
 // Web Bluetooth transport for the Phomemo D30 (Chromium only: Chrome/Edge desktop + Android).
 import { chunks, type D30Job } from './encode';
+import { checkD30Media, type SubscribeToMediaStatus } from './mediaStatus';
 
 export const D30_SERVICE = 0xff00;
 export const D30_WRITE_CHAR = 0xff02;
+const D30_NOTIFY_CHAR = 0xff03;
 const CHUNK = 128;
 
 declare function setTimeout(cb: () => void, ms: number): unknown;
 
 export interface D30Connection {
   name: string;
-  print(job: D30Job): Promise<void>;
+  print(job: D30Job, opts?: { checkMedia?: boolean }): Promise<void>;
   disconnect(): void;
   connected(): boolean;
 }
@@ -27,10 +29,12 @@ export function isWebBluetoothAvailable(): boolean {
 async function open(device: any): Promise<D30Connection> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let ch: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let service: any;
   const attach = async () => {
     const server = await device.gatt.connect();
     await sleep(100);
-    const service = await server.getPrimaryService(D30_SERVICE);
+    service = await server.getPrimaryService(D30_SERVICE);
     ch = await service.getCharacteristic(D30_WRITE_CHAR);
   };
   try {
@@ -51,15 +55,35 @@ async function open(device: any): Promise<D30Connection> {
     }
   };
 
+  const subscribeToMedia: SubscribeToMediaStatus = async (onPacket) => {
+    const notify = await service.getCharacteristic(D30_NOTIFY_CHAR);
+    const onValue = (event: { target: { value?: DataView } }) => {
+      const value = event.target.value;
+      if (value) onPacket(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    };
+    notify.addEventListener('characteristicvaluechanged', onValue);
+    try {
+      await notify.startNotifications();
+    } catch (error) {
+      notify.removeEventListener('characteristicvaluechanged', onValue);
+      throw error;
+    }
+    return async () => {
+      notify.removeEventListener('characteristicvaluechanged', onValue);
+      await notify.stopNotifications();
+    };
+  };
+
   let busy: Promise<void> = Promise.resolve();
   return {
     name: device.name ?? 'D30',
     connected: () => !!device.gatt?.connected,
     disconnect: () => device.gatt?.connected && device.gatt.disconnect(),
-    print(job: D30Job) {
+    print(job: D30Job, { checkMedia = false } = {}) {
       // serialize jobs, with a pause between them
       const run = busy.then(async () => {
         if (!device.gatt.connected) await attach();
+        if (checkMedia && /^D30/i.test(device.name ?? '')) await checkD30Media(write, subscribeToMedia);
         await write(job.header);
         for (const c of chunks(job.data, CHUNK)) await write(c);
         await write(job.footer);
