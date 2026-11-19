@@ -98,7 +98,6 @@ function Boxes() {
   const house = session.house!;
   const houses = session.me?.houses ?? [];
   const setHouse = useSetHouse();
-  const signOut = useSignOut();
   const [q, setQ] = useState('');
   const query = useDeferredValue(q.trim());
   const list = useQuery(queries.boxes(house.id, query));
@@ -112,7 +111,7 @@ function Boxes() {
           <Text style={s.kicker}>{house.name}</Text>
           <Text style={styles.h1}>Boxes</Text>
         </View>
-        <Button label="People" variant="secondary" onPress={() => router.push('/house')} />
+        <Button label="Settings" variant="secondary" onPress={() => router.push('/settings')} />
       </View>
       {houses.length > 1 ? (
         <View style={[styles.row, { flexWrap: 'wrap' }]}>
@@ -172,11 +171,6 @@ function Boxes() {
           ))}
         </View>
       )}
-      <Text style={[styles.muted, { textAlign: 'center' }]}>
-        Signed in as {session.me?.user?.name ?? session.me?.user?.email}
-      </Text>
-      {signOut.error ? <Banner tone="error">{errMsg(signOut.error)}</Banner> : null}
-      <Button label="Sign out" variant="ghost" busy={signOut.isPending} onPress={() => signOut.mutate()} />
     </Screen>
   );
 }

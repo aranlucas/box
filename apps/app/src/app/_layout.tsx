@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 
 import { queryClient } from '@/lib/query';
 import { colors } from '@/ui/theme';
+import { TopBar } from '@/ui/top-bar';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -18,16 +19,13 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: colors.bg },
-          headerShadowVisible: false,
-          headerTintColor: colors.ink,
-          headerTitleStyle: { fontWeight: '700' },
+          header: (props) => <TopBar {...props} />,
           contentStyle: { backgroundColor: colors.bg },
         }}>
         <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
         <Stack.Screen name="new" options={{ title: 'New box' }} />
         <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
-        <Stack.Screen name="house" options={{ title: 'House' }} />
+        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="invite/[token]" options={{ title: 'Invite' }} />
         <Stack.Screen name="auth" options={{ headerShown: false }} />
       </Stack>

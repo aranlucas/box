@@ -1,6 +1,6 @@
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT } from "jose";
 import { beforeAll, describe, expect, test } from "vitest";
-import { authorizeUrl, exchangeCode, ISSUER, REDIRECT_URI, verifyIdToken } from "../src/auth/oidc.ts";
+import { authorizeUrl, exchangeCode, ISSUER, REDIRECT_URI, verifyIdToken, withUserInfo } from "../src/auth/oidc.ts";
 import { s256, safeReturnPath } from "../src/util.ts";
 
 describe("safeReturnPath", () => {
@@ -40,10 +40,12 @@ test("exchangeCode posts the code and verifier with HTTP Basic client auth", asy
   let seen: { url: string; init: RequestInit } | undefined;
   const fetchImpl = (async (url: string, init: RequestInit) => {
     seen = { url, init };
-    return new Response(JSON.stringify({ id_token: "tok" }), { headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ id_token: "tok", access_token: "at", scope: "openid profile email" }), {
+      headers: { "content-type": "application/json" },
+    });
   }) as unknown as typeof fetch;
   const res = await exchangeCode({ code: "c1", verifier: "v1", clientId: "cid", clientSecret: "sec" }, fetchImpl);
-  expect(res.id_token).toBe("tok");
+  expect(res).toEqual({ id_token: "tok", access_token: "at", scope: "openid profile email" });
   expect(seen!.url).toBe(`${ISSUER}/oauth2/token`);
   expect(new Headers(seen!.init.headers).get("authorization")).toBe(`Basic ${btoa("cid:sec")}`);
   const body = new URLSearchParams(seen!.init.body as string);
@@ -60,6 +62,44 @@ test("exchangeCode surfaces token endpoint errors", async () => {
   await expect(exchangeCode({ code: "c", verifier: "v", clientId: "a", clientSecret: "b" }, fetchImpl)).rejects.toThrow(
     /invalid_grant/,
   );
+});
+
+describe("withUserInfo", () => {
+  const userinfo = (body: unknown, status = 200) => {
+    const calls: { url: string; auth: string | null }[] = [];
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      calls.push({ url, auth: new Headers(init.headers).get("authorization") });
+      return new Response(JSON.stringify(body), { status });
+    }) as unknown as typeof fetch;
+    return { calls, fetchImpl };
+  };
+
+  test("fills name and email from userinfo when the ID token lacks them", async () => {
+    const { calls, fetchImpl } = userinfo({ sub: "u1", name: "Ada", email: "ada@example.com" });
+    expect(await withUserInfo({ sub: "u1" }, "at", fetchImpl)).toEqual({ sub: "u1", name: "Ada", email: "ada@example.com" });
+    expect(calls).toEqual([{ url: `${ISSUER}/oauth2/userinfo`, auth: "Bearer at" }]);
+  });
+
+  test("ignores userinfo for a different subject", async () => {
+    const { fetchImpl } = userinfo({ sub: "someone-else", name: "Eve" });
+    expect(await withUserInfo({ sub: "u1" }, "at", fetchImpl)).toEqual({ sub: "u1" });
+  });
+
+  test("keeps the ID token identity when userinfo fails", async () => {
+    const { fetchImpl } = userinfo({ error: "invalid_token" }, 401);
+    expect(await withUserInfo({ sub: "u1", name: "Ada" }, "at", fetchImpl)).toEqual({ sub: "u1", name: "Ada" });
+    const throwing = (async () => {
+      throw new Error("network");
+    }) as unknown as typeof fetch;
+    expect(await withUserInfo({ sub: "u1" }, "at", throwing)).toEqual({ sub: "u1" });
+  });
+
+  test("skips the call when the ID token is complete or there is no access token", async () => {
+    const { calls, fetchImpl } = userinfo({});
+    await withUserInfo({ sub: "u1", name: "Ada", email: "a@x" }, "at", fetchImpl);
+    await withUserInfo({ sub: "u1" }, undefined, fetchImpl);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe("verifyIdToken", () => {
