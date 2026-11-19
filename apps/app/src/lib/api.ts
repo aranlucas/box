@@ -23,7 +23,6 @@ export type * from '@mj/api';
 export const displayName = (person: { name: string | null; email: string | null }) =>
   person.name?.trim() || person.email?.trim() || undefined;
 
-const HOME_ID = 'HOME0000';
 export const boxUrl = (id: string) => `${publicOrigin()}/b/${id}`;
 export const photoUrl = (id: string) => `${API_BASE}/api/photos/${id}`;
 
@@ -91,10 +90,6 @@ export const api = {
   me: () => request<Me>('/me'),
   createHouse: (name: string) =>
     request<{ house: House }>('/houses', json('POST', { name })).then((r) => r.house),
-  claimHome: (key: string) =>
-    request<{ house: House }>(`/houses/${HOME_ID}/claim`, json('POST', { key })).then(
-      (r) => r.house,
-    ),
   members: (houseId: string) =>
     request<{ members: Member[]; invites: PendingInvite[] }>(`/houses/${houseId}/members`),
   removeMember: (houseId: string, userId: string) =>
