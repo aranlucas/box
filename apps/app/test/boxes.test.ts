@@ -6,7 +6,7 @@ import { api, type BoxSummary } from '../src/lib/api';
 import { boxInventory, orderedBoxInventory, refreshHouseBoxes } from '../src/lib/boxes';
 import { queries } from '../src/lib/queries';
 
-vi.mock('@react-native-async-storage/async-storage', () => ({ default: {} }));
+vi.mock('../src/lib/preferences', () => ({ preferenceKeys: {}, preferences: {} }));
 vi.mock('../src/lib/api', () => ({ api: { listBoxes: vi.fn() } }));
 vi.mock('../src/lib/device', () => ({ getDeviceId: vi.fn() }));
 vi.mock('../src/lib/printer', () => ({ tryReconnect: vi.fn() }));

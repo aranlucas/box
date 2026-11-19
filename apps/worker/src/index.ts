@@ -6,14 +6,8 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { extractContents, TITLE_MAX, type Extraction } from './ai.ts';
 import { authRoutes } from './auth/routes.ts';
-import {
-  actorFrom,
-  canAccessHouse,
-  enterHouse,
-  houseRoutes,
-  requireHouse,
-  type HouseEnv,
-} from './houses.ts';
+import { userFromRequest } from './auth/session.ts';
+import { canAccessHouse, enterHouse, houseRoutes, requireHouse, type HouseEnv } from './houses.ts';
 import { printingRoutes } from './printing.ts';
 import { searchBoxes } from './search.ts';
 import { body } from './util.ts';
@@ -47,11 +41,6 @@ const requireBoxAccess = createMiddleware<HouseEnv>(async (c, next) => {
   }
   return (await enterHouse(c, houseId)) ?? next();
 });
-
-// Legacy (v1.0.0 setup screen): true while the household key is still accepted.
-api.get('/auth/check', async (c) =>
-  (await actorFrom(c)).legacy ? c.json({ ok: true }) : c.json({ error: 'Invalid key' }, 401),
-);
 
 async function loadBox(id: string): Promise<Omit<Box, 'can_edit'> | null> {
   const [box, items, photos] = await Promise.all([
@@ -224,12 +213,12 @@ api.get('/boxes', requireHouse, async (c) => {
 
 // Public: anyone with the (unguessable) link can view a box.
 api.get('/boxes/:id', async (c) => {
-  const [box, actor] = await Promise.all([loadBox(pid(c)), actorFrom(c)]);
+  const [box, user] = await Promise.all([loadBox(pid(c)), userFromRequest(c)]);
   if (!box) {
     return c.json({ error: 'Not found' }, 404);
   }
   return c.json<{ box: Box }>({
-    box: { ...box, can_edit: await canAccessHouse(actor, box.house_id) },
+    box: { ...box, can_edit: await canAccessHouse(user, box.house_id) },
   });
 });
 
@@ -346,7 +335,7 @@ app.options('/api/*', (c) =>
   c.body(null, 204, {
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-    'access-control-allow-headers': 'content-type,x-household-key,x-house-id,authorization',
+    'access-control-allow-headers': 'content-type,x-house-id,authorization',
   }),
 );
 api.route('/', houseRoutes);
