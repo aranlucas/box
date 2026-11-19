@@ -44,7 +44,9 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Take photos of what is inside each box."
+          "cameraPermission": "Take photos of what is inside each box.",
+          "photosPermission": "Choose photos of what is inside each box.",
+          "microphonePermission": false
         }
       ],
       [

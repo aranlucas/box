@@ -1,9 +1,10 @@
 import { titleLayout } from '@mj/label';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
 import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
@@ -366,11 +367,12 @@ function Photos({ box }: { box: Box }) {
       {box.photos.map((p) => (
         <Pressable
           key={p.id}
-          accessibilityRole="imagebutton"
+          accessibilityRole="button"
+          accessibilityLabel="Photo of box contents"
           accessibilityHint="Opens the full-size photo"
           onPress={() => (Platform.OS === 'web' ? window.open(photoUrl(p.id), '_blank') : void Linking.openURL(photoUrl(p.id)))}
           style={({ pressed }) => pressed && { opacity: 0.85 }}>
-          <Image source={{ uri: photoUrl(p.id) }} style={s.photo} accessibilityLabel="Photo of box contents" />
+          <Image source={photoUrl(p.id)} style={s.photo} contentFit="cover" alt="" />
         </Pressable>
       ))}
     </ScrollView>

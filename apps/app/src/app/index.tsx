@@ -1,3 +1,4 @@
+import { Button as ExpoButton, Host, Picker, Text as ExpoText } from '@expo/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -158,20 +159,30 @@ function Boxes() {
       </View>
       <PrinterOptions visible={printerOptionsOpen} houseId={house.id} onClose={() => setPrinterOptionsOpen(false)} />
       {houses.length > 1 ? (
-        <View style={[styles.row, { flexWrap: 'wrap' }]}>
-          {houses.map((h) => (
-            <Pressable
-              key={h.id}
-              onPress={() => setHouse.mutate(h.id)}
-              style={[s.chip, h.id === house.id && s.chipOn]}
-              accessibilityRole="button"
-              accessibilityState={{ selected: h.id === house.id }}>
-              <Text style={[s.chipText, h.id === house.id && { color: '#fff' }]}>{h.name}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Host matchContents={{ horizontal: false, vertical: true }} style={s.pickerHost} colorScheme="light" seedColor={colors.kraftDark}>
+          <Picker
+            accessibilityLabel="Switch house"
+            selectedValue={house.id}
+            enabled={!setHouse.isPending}
+            onValueChange={(id) => {
+              if (id !== house.id && !setHouse.isPending) setHouse.mutate(id);
+            }}>
+            {houses.map((h) => (
+              <Picker.Item key={h.id} label={h.name} value={h.id} />
+            ))}
+          </Picker>
+        </Host>
       ) : null}
-      <Button label="＋  New box" big onPress={() => router.push({ pathname: '/new', params: { house: house.id } })} />
+      <Host style={s.newBoxHost}>
+        <ExpoButton
+          variant="text"
+          style={{ width: '100%', height: 64, borderRadius: radius.lg, backgroundColor: colors.ink }}
+          onPress={() => router.push({ pathname: '/new', params: { house: house.id } })}>
+          <ExpoText textStyle={{ ...styles.buttonText, ...styles.buttonTextBig, color: '#fff' }}>
+            ＋  New box
+          </ExpoText>
+        </ExpoButton>
+      </Host>
       <Field
         value={q}
         onChangeText={setQ}
@@ -238,17 +249,8 @@ function Boxes() {
 
 const s = StyleSheet.create({
   kicker: { fontSize: 14, fontWeight: '700', color: colors.kraftDark, textTransform: 'uppercase', letterSpacing: 0.8 },
-  chip: {
-    paddingHorizontal: space(3),
-    minHeight: 36,
-    justifyContent: 'center',
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-  },
-  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipText: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  pickerHost: { width: '100%' },
+  newBoxHost: { width: '100%', height: 64 },
   box: {
     flexDirection: 'row',
     gap: space(3),
