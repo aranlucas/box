@@ -76,9 +76,10 @@ export const api = {
   inviteInfo: (token: string) => request<InviteInfo>(`/invites/${token}`),
   acceptInvite: (token: string) => request<{ house: House }>(`/invites/${token}/accept`, { method: 'POST' }).then((r) => r.house),
 
-  listBoxes: (houseId: string, q?: string) =>
+  listBoxes: (houseId: string, q?: string, signal?: AbortSignal) =>
     request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`, {
       headers: { 'x-house-id': houseId },
+      signal,
     }).then((r) => r.boxes),
   getBox: (id: string) => request<{ box: Box }>(`/boxes/${id}`).then((r) => r.box),
   createBox: (houseId: string, photo: FormDataPhoto) =>

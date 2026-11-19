@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useDeferredValue, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -99,10 +99,16 @@ function Boxes() {
   const houses = session.me?.houses ?? [];
   const setHouse = useSetHouse();
   const [q, setQ] = useState('');
-  const query = useDeferredValue(q.trim());
+  const input = q.trim();
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(input), input ? 450 : 0);
+    return () => clearTimeout(timer);
+  }, [input]);
   const list = useQuery(queries.boxes(house.id, query));
-  const boxes: BoxSummary[] | undefined = list.data;
-  const error = list.error ? errMsg(list.error) : null;
+  const awaitingQuery = query !== input || list.isPlaceholderData;
+  const boxes: BoxSummary[] | undefined = awaitingQuery ? undefined : list.data;
+  const error = !awaitingQuery && list.error ? errMsg(list.error) : null;
 
   return (
     <Screen>
@@ -132,18 +138,20 @@ function Boxes() {
       <Field
         value={q}
         onChangeText={setQ}
-        placeholder="Search: blender, towels, #12…"
+        accessibilityLabel="Search boxes"
+        placeholder="Search for cables, baking supplies, #12…"
         autoCapitalize="none"
         autoCorrect={false}
         clearButtonMode="while-editing"
         returnKeyType="search"
       />
-      {error ? <Banner tone="error">{error}</Banner> : null}
-      {!boxes ? (
-        <ActivityIndicator color={colors.kraft} />
+      {error ? (
+        <Banner tone="error">{error}</Banner>
+      ) : !boxes ? (
+        <ActivityIndicator color={colors.kraft} accessibilityLabel={input ? 'Searching boxes' : 'Loading boxes'} />
       ) : boxes.length === 0 ? (
         <Text style={[styles.muted, { textAlign: 'center', marginTop: space(6) }]}>
-          {q ? 'No boxes match.' : 'No boxes yet. Tap “New box” and photograph what’s inside.'}
+          {input ? 'No boxes match.' : 'No boxes yet. Tap “New box” and photograph what’s inside.'}
         </Text>
       ) : (
         <View style={{ gap: space(2) }}>

@@ -23,7 +23,7 @@ export const queries = {
   boxes: (houseId: string, q: string) =>
     queryOptions({
       queryKey: ['boxes', houseId, q],
-      queryFn: () => api.listBoxes(houseId, q),
+      queryFn: ({ signal }) => api.listBoxes(houseId, q, signal),
       placeholderData: sameHousePlaceholder(houseId),
     }),
 
