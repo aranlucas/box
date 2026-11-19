@@ -35,7 +35,6 @@ beforeEach(() => {
 test('moves existing preferences once and serializes requests behind the migration', async () => {
   const { preferenceKeys, preferences } = await import('../src/lib/preferences');
   previous.set(preferenceKeys.houseId, 'house-a');
-  previous.set(preferenceKeys.legacyHouseholdKey, 'legacy-key');
   previous.set(preferenceKeys.printerId, 'printer-a');
   previous.set(preferenceKeys.deviceId, 'device-a');
   previous.set('unrelated-key', 'keep');
@@ -48,7 +47,6 @@ test('moves existing preferences once and serializes requests behind the migrati
   expect(deviceId).toBe('device-a');
   expect(printerId).toBe('printer-a');
   expect(await preferences.getItem(preferenceKeys.houseId)).toBeNull();
-  expect(await preferences.getItem(preferenceKeys.legacyHouseholdKey)).toBe('legacy-key');
   expect([...previous.keys()]).toEqual(['unrelated-key']);
 
   vi.resetModules();

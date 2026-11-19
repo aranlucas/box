@@ -4,7 +4,6 @@ import { createMMKV, type MMKV } from 'react-native-mmkv';
 export const preferenceKeys = {
   deviceId: 'device-id',
   houseId: 'house-id',
-  legacyHouseholdKey: 'household-key',
   printerId: 'printer-device-id',
 } as const;
 

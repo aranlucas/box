@@ -32,15 +32,6 @@ export const queries = {
   members: (houseId: string) =>
     queryOptions({ queryKey: ['members', houseId], queryFn: () => api.members(houseId) }),
 
-  /** Household key saved by the pre-sign-in web app (v1), used to pre-fill the claim form. */
-  legacyKey: () =>
-    queryOptions({
-      queryKey: ['legacy-household-key'],
-      queryFn: () => preferences.getItem(preferenceKeys.legacyHouseholdKey).catch(() => null),
-      staleTime: Infinity,
-      networkMode: 'always',
-    }),
-
   /** This install's id in the house's printer table. */
   deviceId: () =>
     queryOptions({

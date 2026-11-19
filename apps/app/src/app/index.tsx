@@ -135,11 +135,8 @@ function NoHouse({ user, claimable }: { user: User; claimable: boolean }) {
 /** Boxes packed before sign-in existed live in "Home", which the old household key unlocks once. */
 function ClaimHome() {
   const enterHouse = useEnterHouse();
-  // Browsers set up before sign-in still have the old key saved: pre-fill it.
-  const legacyKey = useQuery(queries.legacyKey()).data;
   const form = useForm({
     defaultValues: { key: '' },
-    values: legacyKey ? { key: legacyKey } : undefined,
     mode: 'onChange',
   });
   const claim = useMutation({
