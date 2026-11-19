@@ -2,7 +2,7 @@ import { Button as ExpoButton, Host, Picker, Text as ExpoText } from '@expo/ui';
 import { useDbClient, useLiveQuery } from '@tanstack/react-db';
 import { onlineManager, useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   ActivityIndicator,
@@ -187,11 +187,7 @@ function useSearch() {
   const [query, setQuery] = useState('');
   const latestInput = useRef('');
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const fieldRef = useCallback((field: unknown) => {
-    if (field === null) {
-      clearTimeout(timer.current);
-    }
-  }, []);
+  useEffect(() => () => clearTimeout(timer.current), []);
   function changeText(value: string) {
     setText(value);
     const next = value.trim();
@@ -206,7 +202,7 @@ function useSearch() {
       setQuery('');
     }
   }
-  return { text, changeText, fieldRef, input, query };
+  return { text, changeText, input, query };
 }
 
 function Boxes({ userId, house, houses }: { userId: string; house: House; houses: House[] }) {
@@ -321,7 +317,6 @@ function Boxes({ userId, house, houses }: { userId: string; house: House; houses
             </ExpoButton>
           </Host>
           <Field
-            ref={search.fieldRef}
             value={search.text}
             onChangeText={search.changeText}
             accessibilityLabel="Search boxes"
