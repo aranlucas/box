@@ -3,24 +3,24 @@ import { useSyncExternalStore } from 'react';
 export type PrinterStatus = 'unsupported' | 'disconnected' | 'connecting' | 'connected' | 'printing';
 export type PrinterState = { status: PrinterStatus; name?: string; error?: string };
 
-/** Tiny observable store shared by the platform printer implementations. */
-export function createPrinterStore(initial: PrinterState) {
+/** Tiny observable store (printer state, household printers). */
+export function createStore<T extends object>(initial: T) {
   let state = initial;
   const listeners = new Set<() => void>();
+  const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
   return {
     get: () => state,
-    set(next: Partial<PrinterState>) {
+    subscribe,
+    set(next: Partial<T>) {
       state = { ...state, ...next };
       listeners.forEach((l) => l());
     },
     useState: () =>
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      useSyncExternalStore(
-        (l) => (listeners.add(l), () => listeners.delete(l)),
-        () => state,
-        () => state,
-      ),
+      useSyncExternalStore(subscribe, () => state, () => state),
   };
 }
+
+/** Printer connection state, one store per platform printer implementation. */
+export const createPrinterStore = (initial: PrinterState) => createStore<PrinterState>(initial);
 
 export const ROTATION_KEY = 'printer-rotation';
