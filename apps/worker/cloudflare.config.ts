@@ -10,7 +10,7 @@ export default defineConfig({
     entrypoint,
     assets: {
       notFoundHandling: "single-page-application",
-      runWorkerFirst: ["/api/*", "/B/*"],
+      runWorkerFirst: ["/api/*", "/B/*", "/auth/*"],
     },
     env: {
       DB: bindings.d1({ id: "52c32efc-6ee3-48d8-8b4e-f41ad071a511", name: "moving-boxes" }),
@@ -18,6 +18,8 @@ export default defineConfig({
       OPENAI_MODEL: bindings.text("gpt-5.1"),
       OPENAI_API_KEY: bindings.secret(),
       HOUSEHOLD_KEY: bindings.secret(),
+      AUTH_CLIENT_ID: bindings.secret(),
+      AUTH_CLIENT_SECRET: bindings.secret(),
     },
   },
 });
