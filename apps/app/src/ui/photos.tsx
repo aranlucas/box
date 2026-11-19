@@ -1,4 +1,4 @@
-import { FlashList, type ListRenderItem } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { Image } from 'expo-image';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
@@ -21,14 +21,14 @@ export function Photos({ photos }: { photos: Photo[] }) {
       style={s.strip}
       data={photos}
       keyExtractor={photoKey}
-      renderItem={renderPhoto}
+      renderItem={({ item }) => <PhotoThumbnail photo={item} />}
       ItemSeparatorComponent={PhotoSeparator}
       showsHorizontalScrollIndicator={false}
     />
   );
 }
 
-const renderPhoto: ListRenderItem<Photo> = ({ item: photo }) => {
+function PhotoThumbnail({ photo }: { photo: Photo }) {
   const uri = photoUrl(photo.id);
   return (
     <Pressable
@@ -50,7 +50,7 @@ const renderPhoto: ListRenderItem<Photo> = ({ item: photo }) => {
       />
     </Pressable>
   );
-};
+}
 
 function PhotoSeparator() {
   return <View style={s.separator} />;
