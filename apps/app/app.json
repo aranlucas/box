@@ -2,7 +2,7 @@
   "expo": {
     "name": "Boxes",
     "slug": "moving-boxes",
-    "version": "1.5.1",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "boxes",
@@ -21,7 +21,7 @@
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "versionCode": 580010501
+      "versionCode": 580010600
     },
     "web": {
       "output": "single",

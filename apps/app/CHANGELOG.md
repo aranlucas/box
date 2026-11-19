@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/aranlucas/moving-journey/compare/v1.5.1...v1.6.0) (2026-11-19)
+
+
+### Features
+
+* **app:** browse box photos in a gallery ([#24](https://github.com/aranlucas/moving-journey/issues/24)) ([6a85de6](https://github.com/aranlucas/moving-journey/commit/6a85de6e93836f136bc51fe098af6ab5e22c0cf9))
+
+
+### Bug Fixes
+
+* **app:** centre the Boxes list in the page column on web ([#22](https://github.com/aranlucas/moving-journey/issues/22)) ([9a9a3a8](https://github.com/aranlucas/moving-journey/commit/9a9a3a86e205097649ab47613eb00afd4ee72131))
+
 ## [1.5.1](https://github.com/aranlucas/moving-journey/compare/v1.5.0...v1.5.1) (2026-11-19)
 
 
