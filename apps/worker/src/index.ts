@@ -62,6 +62,9 @@ async function requireBoxAccess(c: Context<Env>, next: Next) {
 // Legacy (v1.0.0 setup screen): true while the household key is still accepted.
 api.get("/auth/check", async (c) => ((await actorFrom(c)).legacy ? c.json({ ok: true }) : c.json({ error: "Invalid key" }, 401)));
 
+// Responses from routes that already passed requireHouse/requireBoxAccess are editable by the caller.
+const editable = <T extends object>(box: T | null) => (box ? { ...box, can_edit: true } : box);
+
 async function loadBox(id: string) {
   const box = await env.DB.prepare("SELECT * FROM boxes WHERE id = ?").bind(id.toUpperCase()).first<Box>();
   if (!box) return null;
@@ -138,7 +141,7 @@ api.post("/boxes", requireHouse, async (c) => {
     box.title = `Box ${box.number}`;
     await env.DB.prepare("UPDATE boxes SET title = ? WHERE id = ?").bind(box.title, id).run();
   }
-  return c.json({ box, aiFailed: extraction === null }, 201);
+  return c.json({ box: editable(box), aiFailed: extraction === null }, 201);
 });
 
 // Add another photo; AI appends items it hasn't seen yet.
@@ -160,7 +163,7 @@ api.post("/boxes/:id/photos", requireBoxAccess, async (c) => {
     env.DB.prepare("UPDATE boxes SET updated_at = ? WHERE id = ?").bind(now, box.id),
     ...itemInserts(box.id, extraction?.items ?? [], box.items.length, "ai"),
   ]);
-  return c.json({ box: await loadBox(box.id), aiFailed: extraction === null });
+  return c.json({ box: editable(await loadBox(box.id)), aiFailed: extraction === null });
 });
 
 // List / search.
@@ -203,7 +206,7 @@ api.patch("/boxes/:id", requireBoxAccess, async (c) => {
   vals.push(Date.now());
   const res = await env.DB.prepare(`UPDATE boxes SET ${sets.join(", ")} WHERE id = ?`).bind(...vals, id).run();
   if (!res.meta.changes) return c.json({ error: "Not found" }, 404);
-  return c.json({ box: await loadBox(id) });
+  return c.json({ box: editable(await loadBox(id)) });
 });
 
 // Replace the item list (simple; edits come from one household).
@@ -227,7 +230,7 @@ api.put("/boxes/:id/items", requireBoxAccess, async (c) => {
     ),
     env.DB.prepare("UPDATE boxes SET updated_at = ? WHERE id = ?").bind(Date.now(), id),
   ]);
-  return c.json({ box: await loadBox(id) });
+  return c.json({ box: editable(await loadBox(id)) });
 });
 
 api.delete("/boxes/:id", requireBoxAccess, async (c) => {

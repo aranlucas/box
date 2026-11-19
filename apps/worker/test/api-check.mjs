@@ -181,6 +181,14 @@ try {
     garageBox = b.data.box.id;
   });
 
+  await check("edit responses keep can_edit true for members", async () => {
+    const p = await call("PATCH", `/api/boxes/${garageBox}`, { token: A, json: { title: "Tools" } });
+    assert.equal(p.status, 200);
+    assert.equal(p.data.box.can_edit, true);
+    const i = await call("PUT", `/api/boxes/${garageBox}/items`, { token: A, json: { items: [{ name: "hammer" }] } });
+    assert.equal(i.data.box.can_edit, true);
+  });
+
   await check("outsiders cannot modify a Garage box by id", async () => {
     for (const tok of [Bob, D]) {
       assert.equal((await call("PATCH", `/api/boxes/${garageBox}`, { token: tok, json: { title: "x" } })).status, 403);

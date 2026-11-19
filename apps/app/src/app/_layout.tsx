@@ -25,7 +25,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
         <Stack.Screen name="new" options={{ title: 'New box' }} />
         <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />
-        <Stack.Screen name="setup" options={{ title: 'Household key' }} />
+        <Stack.Screen name="house" options={{ title: 'House' }} />
+        <Stack.Screen name="invite/[token]" options={{ title: 'Invite' }} />
       </Stack>
     </>
   );

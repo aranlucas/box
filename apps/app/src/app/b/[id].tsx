@@ -3,7 +3,7 @@ import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { api, boxUrl, getHouseholdKey, photoUrl, type Box, type Item } from '@/lib/api';
+import { api, boxUrl, photoUrl, type Box, type Item } from '@/lib/api';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printLabel, usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
@@ -19,7 +19,6 @@ export default function BoxScreen() {
   const boxId = (id ?? '').toUpperCase();
   const [box, setBox] = useState<Box | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -39,7 +38,6 @@ export default function BoxScreen() {
 
   useEffect(() => {
     load();
-    getHouseholdKey().then((k) => setCanEdit(!!k));
   }, [load]);
 
   const dirty = useMemo(() => {
@@ -160,7 +158,8 @@ export default function BoxScreen() {
   const header = <Stack.Screen options={{ title: `Box #${box.number}` }} />;
 
   // Read-only view for anyone who scanned the label without the household key.
-  if (!canEdit) {
+  // Read-only unless the viewer belongs to this box's house (server decides).
+  if (!box.can_edit) {
     return (
       <Screen>
         {header}
