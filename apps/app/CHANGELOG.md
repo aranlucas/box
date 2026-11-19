@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/aranlucas/box/compare/v1.6.0...v1.7.0) (2026-11-19)
+
+
+### Features
+
+* **app:** rebrand as Box ([4feff09](https://github.com/aranlucas/box/commit/4feff094e3926a8cb649f190b937412d3d3621dc))
+
 ## [1.6.0](https://github.com/aranlucas/box/compare/v1.5.1...v1.6.0) (2026-11-19)
 
 
