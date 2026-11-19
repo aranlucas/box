@@ -107,6 +107,7 @@ The Android app defaults to `https://bx.aranlucas.workers.dev`. Set `EXPO_PUBLIC
 
 - **CI** (`.github/workflows/ci.yml`) runs on every PR and push to `main`. It runs lint, the format check, typecheck, tests, the Expo SDK version check and the web export. It also builds the arm64 APK and attaches it to the run as an artifact you can download and sideload.
 - **PR titles** must follow [Conventional Commits](https://www.conventionalcommits.org/), for example `feat(app): …` or `fix(printer): …`. PRs are squash-merged, so the title becomes the commit that Release Please reads. A `feat` or `fix` that touches `apps/app` starts a release; `chore`, `ci` and `docs` do not.
+  `pnpm install` sets up a Husky hook that runs Commitlint with its Conventional Commits preset. To lint a proposed PR title locally, run `printf '%s\n' 'perf(app): speed up app lists and preference storage' | pnpm check:pr-title`.
 - **Releases** use [Release Please](https://github.com/googleapis/release-please). It keeps a release PR open that bumps `version` and `android.versionCode` in `apps/app/app.json` and updates `apps/app/CHANGELOG.md`. Merging that PR tags `vX.Y.Z`, creates the GitHub Release and attaches `moving-boxes-vX.Y.Z-arm64.apk`.
 
 Release APKs are signed with the Expo template's debug keystore. That is the same certificate as every earlier release, so each one installs over the last. It is fine for sideloading but not for the Play Store.
