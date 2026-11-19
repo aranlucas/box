@@ -1,83 +1,93 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Text } from 'react-native';
+import { Text } from 'react-native';
 
-import { api, ApiError, displayName, type InviteInfo } from '@/lib/api';
+import { api, displayName, isApiError, type InviteInfo, type InviteStatus } from '@/lib/api';
 import { queries } from '@/lib/queries';
-import { useEnterHouse, useSession, useSignIn } from '@/lib/session';
-import { Banner, Button, Card, Screen, styles } from '@/ui/components';
-import { colors, space } from '@/ui/theme';
+import { useEnterHouse, useSession, useSignIn, type Session } from '@/lib/session';
+import { Banner, Button, Card, LoadingScreen, Screen, styles } from '@/ui/components';
 
-const STATUS_COPY: Record<Exclude<InviteInfo['status'], 'valid'>, string> = {
+const UNUSABLE: Record<Exclude<InviteStatus, 'valid'>, string> = {
   used: 'This invite link has already been used. Ask for a new one.',
   expired: 'This invite link has expired. Ask for a new one.',
   revoked: 'This invite link was cancelled. Ask for a new one.',
 };
 
-export default function Invite() {
+export default function InviteScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const session = useSession();
+  const invite = useQuery(queries.invite(token));
+
+  if (invite.data && session.status !== 'loading') {
+    return <Invite token={token} info={invite.data} session={session} />;
+  }
+  if (invite.error) {
+    return (
+      <Screen>
+        <Banner tone="error">
+          {isApiError(invite.error, 404) ? 'This invite link is not valid.' : invite.error.message}
+        </Banner>
+      </Screen>
+    );
+  }
+  return <LoadingScreen />;
+}
+
+function Invite({
+  token,
+  info,
+  session,
+}: {
+  token: string;
+  info: InviteInfo;
+  session: Exclude<Session, { status: 'loading' }>;
+}) {
   const signIn = useSignIn();
   const enterHouse = useEnterHouse();
-  const inviteQuery = useQuery(queries.invite(token));
-  const info: InviteInfo | null = inviteQuery.data ?? null;
   const accept = useMutation({
-    mutationFn: () => api.acceptInvite(token),
-    onSuccess: async (house) => {
-      await enterHouse(house);
+    mutationFn: async () => {
+      await enterHouse(await api.acceptInvite(token));
       router.replace('/');
     },
   });
-  const busy = accept.isPending;
-  const join = () => accept.mutate();
-  const error = inviteQuery.error
-    ? inviteQuery.error instanceof ApiError && inviteQuery.error.status === 404
-      ? 'This invite link is not valid.'
-      : inviteQuery.error.message
-    : accept.error
-      ? accept.error.message
-      : null;
+  const problem = accept.error ?? signIn.error;
 
-  if (error && !info) {
-    return (
-      <Screen>
-        <Banner tone="error">{error}</Banner>
-      </Screen>
-    );
-  }
-  if (!info || session.loading) {
-    return (
-      <Screen>
-        <ActivityIndicator color={colors.kraft} style={{ marginTop: space(10) }} />
-      </Screen>
-    );
-  }
-
-  const signedIn = !!session.me?.user;
   return (
     <Screen>
-      <Text style={styles.h1}>Join “{info.house_name}”</Text>
+      <Text style={styles.h1} accessibilityRole="header">
+        Join “{info.house_name}”
+      </Text>
       <Card>
         <Text style={styles.body}>
           {info.inviter_name ?? 'Someone'} invited you to their moving boxes. Members can add,
           search and print boxes for this house.
         </Text>
-        {info.status !== 'valid' ? <Banner tone="error">{STATUS_COPY[info.status]}</Banner> : null}
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        {!signedIn ? (
+        {info.status === 'valid' ? null : <Banner tone="error">{UNUSABLE[info.status]}</Banner>}
+        {problem ? <Banner tone="error">{problem.message}</Banner> : null}
+        {session.status === 'signed-in' ? (
+          // Already-members get 200 from accept even if the link was used, so Join stays enabled.
+          <Button
+            label="Join"
+            big
+            busy={accept.isPending}
+            onPress={() => {
+              accept.mutate();
+            }}
+          />
+        ) : (
           <Button
             label="Sign in to join"
             big
-            onPress={() => signIn.mutate(`/invite/${token}`)}
+            busy={signIn.isPending}
             disabled={info.status !== 'valid'}
+            onPress={() => {
+              signIn.mutate(`/invite/${token}`);
+            }}
           />
-        ) : (
-          // Already-members get 200 from accept even if the link was used, so Join stays enabled.
-          <Button label="Join" big busy={busy} onPress={join} />
         )}
       </Card>
-      {signedIn && displayName(session.me?.user) ? (
-        <Text style={styles.muted}>Signed in as {displayName(session.me?.user)}</Text>
+      {session.status === 'signed-in' ? (
+        <Text style={styles.muted}>Signed in as {displayName(session.user) ?? 'your account'}</Text>
       ) : null}
     </Screen>
   );

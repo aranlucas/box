@@ -43,7 +43,7 @@ const PENDING = {
 };
 const callback = (params: Record<string, string>) =>
   new URL(
-    `${REDIRECT_URI}?${new URLSearchParams({ code: 'c1', state: 'st', iss: ISSUER, ...params })}`,
+    `${REDIRECT_URI}?${new URLSearchParams({ code: 'c1', state: 'st', iss: ISSUER, ...params }).toString()}`,
   );
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -54,10 +54,14 @@ function fakeAuthService(opts: {
   userinfo?: () => Response;
   token?: () => Response;
 }) {
-  const calls: { url: string; init: RequestInit }[] = [];
-  const fetchImpl = async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const calls: { url: string; headers: Headers; form: Record<string, string> }[] = [];
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
     const url = input instanceof Request ? input.url : String(input);
-    calls.push({ url, init });
+    calls.push({
+      url,
+      headers: new Headers(init.headers),
+      form: init.body instanceof URLSearchParams ? Object.fromEntries(init.body) : {},
+    });
     if (url === `${ISSUER}/.well-known/openid-configuration`) {
       return json({
         issuer: ISSUER,
@@ -85,7 +89,15 @@ function fakeAuthService(opts: {
     }
     return new Response('not found', { status: 404 });
   };
-  return { calls, fetchImpl };
+  /** The one call made to an endpoint; fails the test if there was none. */
+  const callTo = (path: string) => {
+    const call = calls.find((c) => c.url === `${ISSUER}${path}`);
+    if (!call) {
+      throw new Error(`no request was made to ${path}`);
+    }
+    return call;
+  };
+  return { calls, callTo, fetchImpl };
 }
 
 describe('sign-in with the auth service', () => {
@@ -131,7 +143,7 @@ describe('sign-in with the auth service', () => {
   });
 
   test('exchanges the code with HTTP Basic auth and PKCE, then reads name/email from userinfo', async () => {
-    const { calls, fetchImpl } = fakeAuthService({
+    const { callTo, fetchImpl } = fakeAuthService({
       idToken: () => sign({ nonce: 'n1' }),
       userinfo: () => json({ sub: 'user-123', name: 'Ada', email: 'ada@example.com' }),
     });
@@ -139,17 +151,15 @@ describe('sign-in with the auth service', () => {
     const identity = await completeSignIn(as, CLIENT, callback({}), PENDING, fetchImpl);
     expect(identity).toEqual({ sub: 'user-123', name: 'Ada', email: 'ada@example.com' });
 
-    const token = calls.find((c) => c.url === `${ISSUER}/oauth2/token`)!;
-    expect(new Headers(token.init.headers).get('authorization')).toBe(`Basic ${btoa('cid:sec')}`);
-    expect(token.init.body).toBeInstanceOf(URLSearchParams);
-    expect(Object.fromEntries(token.init.body as URLSearchParams)).toEqual({
+    const token = callTo('/oauth2/token');
+    expect(token.headers.get('authorization')).toBe(`Basic ${btoa('cid:sec')}`);
+    expect(token.form).toEqual({
       grant_type: 'authorization_code',
       code: 'c1',
       code_verifier: PENDING.verifier,
       redirect_uri: 'https://bx.aranlucas.workers.dev/auth/callback',
     });
-    const userinfo = calls.find((c) => c.url === `${ISSUER}/oauth2/userinfo`)!;
-    expect(new Headers(userinfo.init.headers).get('authorization')).toBe('Bearer at');
+    expect(callTo('/oauth2/userinfo').headers.get('authorization')).toBe('Bearer at');
   });
 
   test('skips userinfo when the ID token already has name and email', async () => {
@@ -189,15 +199,15 @@ describe('sign-in with the auth service', () => {
 
   test('surfaces an error the auth service redirected back with', async () => {
     const { fetchImpl } = fakeAuthService({ idToken: () => sign({ nonce: 'n1' }) });
-    const err = await completeSignIn(
+    const signIn = completeSignIn(
       await authServer(fetchImpl),
       CLIENT,
       callback({ error: 'access_denied' }),
       PENDING,
       fetchImpl,
-    ).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(AuthorizationResponseError);
-    expect((err as AuthorizationResponseError).error).toBe('access_denied');
+    );
+    await expect(signIn).rejects.toBeInstanceOf(AuthorizationResponseError);
+    await expect(signIn).rejects.toMatchObject({ error: 'access_denied' });
   });
 
   test.each([
@@ -207,7 +217,7 @@ describe('sign-in with the auth service', () => {
     const { calls, fetchImpl } = fakeAuthService({ idToken: () => sign({ nonce: 'n1' }) });
     await expect(
       completeSignIn(await authServer(fetchImpl), CLIENT, callback(params), PENDING, fetchImpl),
-    ).rejects.toThrow(Error);
+    ).rejects.toThrow();
     expect(calls.some((c) => c.url.endsWith('/oauth2/token'))).toBe(false);
   });
 
@@ -220,7 +230,7 @@ describe('sign-in with the auth service', () => {
     const { fetchImpl } = fakeAuthService({ idToken });
     await expect(
       completeSignIn(await authServer(fetchImpl), CLIENT, callback({}), PENDING, fetchImpl),
-    ).rejects.toThrow(Error);
+    ).rejects.toThrow();
   });
 
   test('surfaces token endpoint errors', async () => {

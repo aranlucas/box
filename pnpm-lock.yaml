@@ -44,6 +44,9 @@ importers:
       '@expo/ui':
         specifier: ~58.0.29
         version: 58.0.29(@babel/core@7.29.13)(expo@58.0.26)(react-dom@19.3.0(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0))(react-native@0.88.1(@babel/core@7.29.13)(@react-native/metro-config@0.88.1(@babel/core@7.29.13))(@types/react@19.3.0)(react@19.3.0))(react@19.3.0)
+      '@mj/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@mj/label':
         specifier: workspace:*
         version: link:../../packages/label
@@ -156,6 +159,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.144(zod@4.6.7)
+      '@mj/api':
+        specifier: workspace:*
+        version: link:../../packages/api
       '@mj/label':
         specifier: workspace:*
         version: link:../../packages/label
@@ -190,6 +196,12 @@ importers:
       vitest:
         specifier: ^5.1.1
         version: 5.1.1(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)(terser@5.51.2))
+
+  packages/api:
+    dependencies:
+      '@mj/label':
+        specifier: workspace:*
+        version: link:../label
 
   packages/label:
     dependencies:

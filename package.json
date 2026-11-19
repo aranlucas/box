@@ -7,7 +7,9 @@
     "lint:fix": "pnpm lint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
+    "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
     "build:web": "pnpm --filter app export:web",
     "deploy": "pnpm build:web && pnpm --filter worker exec cf deploy --secrets-file .dev.vars"
   },

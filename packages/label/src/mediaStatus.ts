@@ -24,9 +24,7 @@ export async function checkD30Media(
 
   try {
     stop = await subscribe((packet) => {
-      if (!packet) {
-        available = false;
-      } else {
+      if (packet) {
         for (let offset = 0; offset + 2 < packet.length && packet[offset] === 0x1a; offset += 3) {
           const type = packet[offset + 1];
           const value = packet[offset + 2];
@@ -47,11 +45,23 @@ export async function checkD30Media(
             break;
           }
         }
+      } else {
+        available = false;
       }
       if (finished()) {
         wake?.();
       }
     });
+
+    /** Resolves when a reply settles the check, or after STATUS_REPLY_MS without one. */
+    const replyOrTimeout = () =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, STATUS_REPLY_MS);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
 
     // Retry unanswered queries once in case the native monitor was still being enabled.
     // oxlint-disable no-await-in-loop -- Each retry depends on the replies from the previous attempt.
@@ -63,13 +73,7 @@ export async function checkD30Media(
         await write(PAPER_QUERY);
       }
       if (!finished()) {
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, STATUS_REPLY_MS);
-          wake = () => {
-            clearTimeout(timer);
-            resolve();
-          };
-        });
+        await replyOrTimeout();
       }
     }
     // oxlint-enable no-await-in-loop

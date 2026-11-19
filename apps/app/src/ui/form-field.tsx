@@ -7,8 +7,7 @@ import {
 } from 'react-hook-form';
 import { Text, View, type TextInputProps, type ViewStyle } from 'react-native';
 
-import { Field } from './components';
-import { colors, space } from './theme';
+import { Field, styles } from './components';
 
 type Props<T extends FieldValues> = Omit<TextInputProps, 'value' | 'onChangeText' | 'onBlur'> & {
   control: Control<T>;
@@ -28,15 +27,10 @@ export function FormField<T extends FieldValues>({
 }: Props<T>) {
   const { field, fieldState } = useController({ control, name, rules });
   return (
-    <View style={[{ gap: space(1) }, containerStyle]}>
-      <Field
-        {...props}
-        value={field.value ?? ''}
-        onChangeText={field.onChange}
-        onBlur={field.onBlur}
-      />
+    <View style={[styles.field, containerStyle]}>
+      <Field {...props} value={field.value} onChangeText={field.onChange} onBlur={field.onBlur} />
       {fieldState.error?.message ? (
-        <Text style={{ color: colors.red, fontSize: 13 }}>{fieldState.error.message}</Text>
+        <Text style={styles.error}>{fieldState.error.message}</Text>
       ) : null}
     </View>
   );

@@ -28,7 +28,8 @@ async function mockPrinter(
   const writer = {
     async writeValueWithResponse(bytes: Uint8Array) {
       writes.push([...bytes]);
-      const response = bytes[0] === 0x1f ? reply(bytes[2]) : undefined;
+      const [prefix, , query] = bytes;
+      const response = prefix === 0x1f && query !== undefined ? reply(query) : undefined;
       if (response) {
         const packet = Uint8Array.of(0, ...response);
         listener?.({ target: { value: new DataView(packet.buffer, 1) } });

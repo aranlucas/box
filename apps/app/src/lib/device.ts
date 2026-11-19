@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 
 const ID_KEY = 'device-id';
-let cachedId: Promise<string> | null = null;
+let cachedId: Promise<string> | undefined;
 
 /** A stable, random id for this install. Identifies the device in the household's printer table. */
 export function getDeviceId(): Promise<string> {

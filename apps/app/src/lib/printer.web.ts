@@ -6,16 +6,23 @@ import {
   type D30Connection,
 } from '@mj/label/webBluetooth';
 
-import { createPrinterStore } from './printer-store';
+import { createStore, type PrinterState } from './store';
+import { errorMessage } from './util';
 
-const store = createPrinterStore({
+const store = createStore<PrinterState>({
   status: isWebBluetoothAvailable() ? 'disconnected' : 'unsupported',
+  name: 'D30',
 });
-let conn: D30Connection | null = null;
+let conn: D30Connection | undefined;
 
 export const usePrinter = store.useState;
 export const getPrinterState = store.get;
 export const subscribePrinter = store.subscribe;
+
+function connected(connection: D30Connection) {
+  conn = connection;
+  store.set({ status: 'connected', name: connection.name, error: undefined });
+}
 
 /** Must be called from a tap/click (Web Bluetooth requires a user gesture to show the picker). */
 export async function connectPrinter(opts: { acceptAll?: boolean } = {}) {
@@ -24,12 +31,12 @@ export async function connectPrinter(opts: { acceptAll?: boolean } = {}) {
   }
   store.set({ status: 'connecting', error: undefined });
   try {
-    conn = await connectD30(opts);
-    store.set({ status: 'connected', name: conn.name });
-  } catch (err) {
-    conn = null;
-    const msg = err instanceof Error ? err.message : String(err);
-    store.set({ status: 'disconnected', error: /cancel/i.test(msg) ? undefined : msg });
+    connected(await connectD30(opts));
+  } catch (error) {
+    conn = undefined;
+    const message = errorMessage(error);
+    // Closing the browser's device picker is not an error worth showing.
+    store.set({ status: 'disconnected', error: /cancel/i.test(message) ? undefined : message });
   }
 }
 
@@ -38,21 +45,17 @@ export async function tryReconnect() {
   if (!isWebBluetoothAvailable() || conn?.connected()) {
     return;
   }
-  try {
-    const c = await reconnect();
-    if (c) {
-      conn = c;
-      store.set({ status: 'connected', name: c.name, error: undefined });
-    }
-  } catch {
-    // Silent: the user can still tap "Connect printer".
+  // Silent on failure: the user can still tap "Connect printer".
+  const connection = await reconnect().catch(() => null);
+  if (connection) {
+    connected(connection);
   }
 }
 
 export function disconnectPrinter() {
   conn?.disconnect();
-  conn = null;
-  store.set({ status: 'disconnected', name: undefined });
+  conn = undefined;
+  store.set({ status: 'disconnected' });
 }
 
 /**
@@ -70,16 +73,19 @@ export async function printLabel(
       await connectPrinter();
     }
   }
-  if (!conn?.connected()) {
-    throw new Error('Printer not connected');
+  const connection = conn;
+  if (!connection?.connected()) {
+    throw new Error(store.get().error ?? 'Printer not connected');
   }
   store.set({ status: 'printing', error: undefined });
   try {
-    await conn.print(buildJob(input, rotation), { checkMedia });
+    await connection.print(buildJob(input, rotation), { checkMedia });
     store.set({ status: 'connected' });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    store.set({ status: conn?.connected() ? 'connected' : 'disconnected', error: msg });
-    throw err;
+  } catch (error) {
+    store.set({
+      status: connection.connected() ? 'connected' : 'disconnected',
+      error: errorMessage(error),
+    });
+    throw error;
   }
 }

@@ -5,36 +5,29 @@ import { buildJob, checkD30Media, chunks, type LabelInput, type Rotation } from 
 import { PermissionsAndroid, Platform } from 'react-native';
 import { BleManager, State, type Device } from 'react-native-ble-plx';
 
-import { createPrinterStore } from './printer-store';
+import { createStore, type PrinterState } from './store';
+import { errorMessage, sleep, toBase64 } from './util';
 
 const SERVICE = '0000ff00-0000-1000-8000-00805f9b34fb';
 const WRITE_CHAR = '0000ff02-0000-1000-8000-00805f9b34fb';
 const NOTIFY_CHAR = '0000ff03-0000-1000-8000-00805f9b34fb';
 const DEVICE_KEY = 'printer-device-id';
 const SCAN_MS = 10_000;
+/** The model this app is built for; its sibling "D…" printers speak the same raster protocol. */
+const D30 = /^D30/i;
+const ANY_D_SERIES = /^D\d/i;
 
-let manager: BleManager | null = null;
+let manager: BleManager | undefined;
 const ble = () => (manager ??= new BleManager());
 
-const store = createPrinterStore({ status: 'disconnected' });
-let device: Device | null = null;
+const store = createStore<PrinterState>({ status: 'disconnected', name: 'D30' });
+let device: Device | undefined;
 let chunkSize = 20;
 let lastJobAt = 0;
 
 export const usePrinter = store.useState;
 export const getPrinterState = store.get;
 export const subscribePrinter = store.subscribe;
-
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
-function toBase64(bytes: Uint8Array): string {
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) {
-    bin += String.fromCharCode(bytes[i]);
-  }
-  return btoa(bin);
-}
 
 async function ensurePermissions() {
   if (Platform.OS !== 'android') {
@@ -63,21 +56,20 @@ async function ensurePoweredOn() {
   }
   // Unknown/Resetting right after startup: wait briefly for it to settle.
   await new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => {
-      sub.remove();
+    const timeout = setTimeout(() => {
+      subscription.remove();
       reject(new Error('Bluetooth is not available.'));
     }, 5000);
-    const sub = ble().onStateChange((s) => {
-      if (s === State.PoweredOn) {
-        clearTimeout(t);
-        sub.remove();
-        resolve();
+    const subscription = ble().onStateChange((next) => {
+      if (next !== State.PoweredOn) {
+        return;
       }
+      clearTimeout(timeout);
+      subscription.remove();
+      resolve();
     }, true);
   });
 }
-
-const isD30 = (d: Device) => /^D30/i.test(d.name ?? d.localName ?? '');
 
 /** Scan for the nearest D30 (or any Phomemo "D…" printer when acceptAll). */
 function scanForPrinter(acceptAll: boolean): Promise<Device> {
@@ -92,29 +84,27 @@ function scanForPrinter(acceptAll: boolean): Promise<Device> {
       void ble().stopDeviceScan();
       fn();
     };
-    const timer = setTimeout(
-      () =>
-        finish(() =>
-          reject(new Error('No D30 printer found. Turn it on and keep it close to the phone.')),
-        ),
-      SCAN_MS,
-    );
+    const fail = (error: Error) => {
+      finish(() => {
+        reject(error);
+      });
+    };
+    const timer = setTimeout(() => {
+      fail(new Error('No D30 printer found. Turn it on and keep it close to the phone.'));
+    }, SCAN_MS);
+    const wanted = acceptAll ? ANY_D_SERIES : D30;
     // FF00 isn't advertised by the D30, so scan without a service filter and match by name.
-    ble()
-      .startDeviceScan(null, { allowDuplicates: false }, (error, d) => {
+    void ble()
+      .startDeviceScan(null, { allowDuplicates: false }, (error, found) => {
         if (error) {
-          finish(() => reject(error));
-          return;
-        }
-        if (!d) {
-          return;
-        }
-        const name = d.name ?? d.localName ?? '';
-        if (isD30(d) || (acceptAll && /^D\d/i.test(name))) {
-          finish(() => resolve(d));
+          fail(error);
+        } else if (found && wanted.test(found.name ?? found.localName ?? '')) {
+          finish(() => {
+            resolve(found);
+          });
         }
       })
-      .catch((e) => finish(() => reject(e)));
+      .catch(fail);
   });
 }
 
@@ -122,30 +112,22 @@ async function attach(d: Device) {
   let connected = await d.connect({ requestMTU: 185, timeout: 10_000 });
   await sleep(100);
   connected = await connected.discoverAllServicesAndCharacteristics();
-  chunkSize = Math.max(20, Math.min(128, (connected.mtu ?? 23) - 3));
+  chunkSize = Math.max(20, Math.min(128, connected.mtu - 3));
   device = connected;
   connected.onDisconnected(() => {
-    if (device?.id === connected.id) {
-      device = null;
-      if (store.get().status !== 'connecting') {
-        store.set({ status: 'disconnected' });
-      }
+    if (device?.id !== connected.id) {
+      return;
+    }
+    device = undefined;
+    if (store.get().status !== 'connecting') {
+      store.set({ status: 'disconnected' });
     }
   });
   await AsyncStorage.setItem(DEVICE_KEY, connected.id);
   store.set({ status: 'connected', name: connected.name ?? 'D30', error: undefined });
 }
 
-async function isConnected() {
-  if (!device) {
-    return false;
-  }
-  try {
-    return await device.isConnected();
-  } catch {
-    return false;
-  }
-}
+const isConnected = async () => (await device?.isConnected().catch(() => false)) ?? false;
 
 export async function connectPrinter(opts: { acceptAll?: boolean } = {}) {
   store.set({ status: 'connecting', error: undefined });
@@ -154,9 +136,9 @@ export async function connectPrinter(opts: { acceptAll?: boolean } = {}) {
     await ensurePoweredOn();
     const d = await scanForPrinter(!!opts.acceptAll);
     await attach(d);
-  } catch (e) {
-    device = null;
-    store.set({ status: 'disconnected', error: errMsg(e) });
+  } catch (error) {
+    device = undefined;
+    store.set({ status: 'disconnected', error: errorMessage(error) });
   }
 }
 
@@ -176,22 +158,18 @@ export async function tryReconnect() {
     }
     store.set({ status: 'connecting', error: undefined });
     const [known] = await ble().devices([id]);
-    if (known) {
-      await attach(known);
-    } else {
-      await attach(await ble().connectToDevice(id, { requestMTU: 185, timeout: 6000 }));
-    }
+    await attach(known ?? (await ble().connectToDevice(id, { requestMTU: 185, timeout: 6000 })));
   } catch {
-    device = null;
+    device = undefined;
     store.set({ status: 'disconnected' });
   }
 }
 
 export function disconnectPrinter() {
-  const d = device;
-  device = null;
-  store.set({ status: 'disconnected', name: undefined });
-  d?.cancelConnection().catch(() => {});
+  const leaving = device;
+  device = undefined;
+  store.set({ status: 'disconnected' });
+  leaving?.cancelConnection().catch(() => {});
 }
 
 /**
@@ -209,12 +187,9 @@ export async function printLabel(
       await connectPrinter();
     }
   }
-  if (!(await isConnected())) {
-    throw new Error(store.get().error ?? 'Printer not connected');
-  }
   const printer = device;
-  if (!printer) {
-    throw new Error('Printer not connected');
+  if (!printer || !(await isConnected())) {
+    throw new Error(store.get().error ?? 'Printer not connected');
   }
   const write = async (bytes: Uint8Array) => {
     await printer.writeCharacteristicWithResponseForService(SERVICE, WRITE_CHAR, toBase64(bytes));
@@ -226,7 +201,7 @@ export async function printLabel(
     if (wait > 0) {
       await sleep(wait);
     }
-    if (checkMedia && isD30(printer)) {
+    if (checkMedia && D30.test(printer.name ?? printer.localName ?? '')) {
       await checkD30Media(write, (onPacket) => {
         const subscription = printer.monitorCharacteristicForService(
           SERVICE,
@@ -239,20 +214,23 @@ export async function printLabel(
             }
           },
         );
-        return () => subscription.remove();
+        return () => {
+          subscription.remove();
+        };
       });
     }
     const job = buildJob(input, rotation);
-    await write(job.header);
-    for (const c of chunks(job.data, chunkSize)) {
-      // oxlint-disable-next-line no-await-in-loop -- BLE writes must arrive in byte order.
-      await write(c);
+    for (const bytes of [job.header, ...chunks(job.data, chunkSize), job.footer]) {
+      // oxlint-disable-next-line no-await-in-loop -- the printer needs its chunks in order
+      await write(bytes);
     }
-    await write(job.footer);
     lastJobAt = Date.now();
     store.set({ status: 'connected' });
-  } catch (e) {
-    store.set({ status: (await isConnected()) ? 'connected' : 'disconnected', error: errMsg(e) });
-    throw e;
+  } catch (error) {
+    store.set({
+      status: (await isConnected()) ? 'connected' : 'disconnected',
+      error: errorMessage(error),
+    });
+    throw error;
   }
 }

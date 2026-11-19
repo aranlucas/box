@@ -21,7 +21,14 @@ npx expo-doctor             # diagnose dependency and config issues
 npx expo install --fix      # fix incompatible package versions
 ```
 
-Run lint and typecheck before declaring any task done.
+Run `pnpm check` from the repo root (lint, format, typecheck and tests for every package) before declaring any task done.
+
+## Code style
+
+- Lint errors are fixed in the code. A rule is switched off only in `/oxlint.config.mts`, with the reason next to it; an inline `oxlint-disable` needs a `-- reason` too.
+- Prevent nulls and trust the types: narrow once at a boundary and pass non-null props down, rather than re-checking with `?.`, `??` or `!` further in. No `any`, no non-null assertions.
+- Types shared with the Worker live in `packages/api`. Change a response shape there, and the typecheck shows both sides.
+- `printer.ts`, `auth.ts` and `label-preview.tsx` each have a `.web` twin with the same exports. Nothing checks one against the other, so change them together.
 
 ## Navigation & Routing
 

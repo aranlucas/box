@@ -7,7 +7,7 @@ export {
   renderLabel,
   titleLayout,
 } from './render';
-export { type Rotation, type D30Job, encodeD30, chunks, inkCoverage } from './encode';
+export { type Rotation, type D30Job, encodeD30, chunks, inkCoverage, setBit } from './encode';
 export { buildJob } from './printJob';
 export { checkD30Media } from './mediaStatus';
 export { normalizeText } from './font';

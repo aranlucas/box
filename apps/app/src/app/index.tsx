@@ -13,19 +13,33 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 
-import { api, type BoxSummary, type House } from '@/lib/api';
-import { remotePrinters, useHousehold } from '@/lib/household';
-import { usePrinter } from '@/lib/printer';
+import { api, type BoxSummary, type House, type User } from '@/lib/api';
 import { queries } from '@/lib/queries';
-import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
-import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
+import { useEnterHouse, useSession, useSetHouse, useSignIn, useSignOut } from '@/lib/session';
+import {
+  Banner,
+  Button,
+  Card,
+  Field,
+  IconButton,
+  ListScreen,
+  LoadingScreen,
+  Screen,
+  styles,
+  UnpackedBadge,
+} from '@/ui/components';
 import { FormField } from '@/ui/form-field';
-import { PrinterButton, PrinterOptions } from '@/ui/printer-bar';
+import { PrinterMenu } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** How many item names the server puts in a box's preview line. */
+const PREVIEW_ITEMS = 6;
+const NEW_BOX_HEIGHT = 64;
+/** How long to wait after the last keystroke before searching. */
+const SEARCH_DELAY_MS = 450;
 
-const icon = require('../../assets/images/icon.png') as ImageSourcePropType;
+// oxlint-disable-next-line typescript/no-unsafe-assignment -- Metro turns an image require() into an asset id
+const icon: ImageSourcePropType = require('../../assets/images/icon.png');
 
 /** App mark beside a page title. */
 function Mark({ size = 44 }: { size?: number }) {
@@ -40,39 +54,46 @@ function Mark({ size = 44 }: { size?: number }) {
 
 export default function Home() {
   const session = useSession();
-  const { auth_error } = useLocalSearchParams<{ auth_error?: string }>();
+  // Set by the Worker when sign-in in the browser did not complete (see /auth/callback).
+  const { auth_error: authError } = useLocalSearchParams<{ auth_error?: string }>();
 
-  if (session.loading && !session.me) {
+  if (session.status === 'loading') {
+    return <LoadingScreen safeTop />;
+  }
+  if (session.status === 'signed-out') {
     return (
-      <Screen safeTop>
-        <ActivityIndicator color={colors.kraft} style={{ marginTop: space(10) }} />
-      </Screen>
+      <SignedOut
+        error={authError ? 'Sign-in did not complete. Please try again.' : session.error}
+      />
     );
   }
-  if (!session.me?.user) {
-    return <SignedOut error={auth_error ?? session.error} />;
-  }
   if (!session.house) {
-    return <NoHouse claimable={session.me.legacyHomeClaimable} name={session.me.user.name} />;
+    return <NoHouse user={session.user} claimable={session.legacyHomeClaimable} />;
   }
-  return <Boxes house={session.house} />;
+  return <Boxes house={session.house} houses={session.houses} />;
 }
 
-function SignedOut({ error }: { error?: string | null }) {
+function SignedOut({ error }: { error?: string }) {
   const signIn = useSignIn();
-  const err = signIn.error ? errMsg(signIn.error) : null;
+  const problem = signIn.error?.message ?? error;
   return (
     <Screen safeTop>
-      <View style={[styles.row, { gap: space(3) }]}>
+      <View style={s.brand}>
         <Mark />
-        <Text style={styles.h1}>Moving boxes</Text>
+        <Text style={styles.h1} accessibilityRole="header">
+          Moving boxes
+        </Text>
       </View>
       <Card>
         <Text style={styles.body}>Sign in to pack, print and search your household’s boxes.</Text>
-        {error || err ? (
-          <Banner tone="error">{err ?? 'Sign-in did not complete. Please try again.'}</Banner>
-        ) : null}
-        <Button label="Sign in" busy={signIn.isPending} onPress={() => signIn.mutate('/')} />
+        {problem ? <Banner tone="error">{problem}</Banner> : null}
+        <Button
+          label="Sign in"
+          busy={signIn.isPending}
+          onPress={() => {
+            signIn.mutate('/');
+          }}
+        />
       </Card>
       <Text style={styles.muted}>
         Just unpacking? Scan the QR code on a box with your phone camera — no sign-in needed.
@@ -81,258 +102,282 @@ function SignedOut({ error }: { error?: string | null }) {
   );
 }
 
-function NoHouse({ claimable, name }: { claimable: boolean; name: string | null }) {
-  const enterHouse = useEnterHouse();
+function NoHouse({ user, claimable }: { user: User; claimable: boolean }) {
   const signOut = useSignOut();
-  // Browsers set up before sign-in still have the old key saved: pre-fill it.
-  const legacyKey = useQuery(queries.legacyKey()).data;
-  const form = useForm<{ key: string }>({
-    defaultValues: { key: '' },
-    values: legacyKey ? { key: legacyKey } : undefined,
-    mode: 'onChange',
-  });
-  const claimMut = useMutation({
-    mutationFn: (key: string) => api.claimHome(key),
-    onSuccess: enterHouse,
-  });
-  const claim = () => {
-    void form.handleSubmit(({ key }) => claimMut.mutate(key.trim()))();
-  };
-  const err = claimMut.error ? errMsg(claimMut.error) : null;
-
+  const [firstName] = user.name?.split(' ') ?? [];
   return (
     <Screen safeTop>
-      <Text style={styles.h1}>Hi{name ? `, ${name.split(' ')[0]}` : ''}</Text>
-      {claimable ? (
-        <Card>
-          <Text style={styles.h2}>Claim your existing boxes</Text>
-          <Text style={styles.body}>
-            Boxes packed before sign-in live in a house called “Home”. Enter the old household key
-            once to become its owner.
-          </Text>
-          <FormField
-            control={form.control}
-            name="key"
-            rules={{ validate: (v) => v.trim().length > 0 || 'Enter the household key' }}
-            label="Household key"
-            autoCapitalize="none"
-            autoCorrect={false}
-            secureTextEntry
-            onSubmitEditing={claim}
-          />
-          {err ? <Banner tone="error">{err}</Banner> : null}
-          <Button
-            label="Claim Home"
-            busy={claimMut.isPending}
-            disabled={!form.formState.isValid}
-            onPress={claim}
-          />
-        </Card>
-      ) : null}
+      <Text style={styles.h1} accessibilityRole="header">
+        {firstName ? `Hi, ${firstName}` : 'Hi'}
+      </Text>
+      {claimable ? <ClaimHome /> : null}
       <Card>
         <Text style={styles.h2}>Joining someone’s house?</Text>
         <Text style={styles.body}>
           Ask a household member to send you an invite link, then open it on this device.
         </Text>
       </Card>
-      {signOut.error ? <Banner tone="error">{errMsg(signOut.error)}</Banner> : null}
+      {signOut.error ? <Banner tone="error">{signOut.error.message}</Banner> : null}
       <Button
         label="Sign out"
         variant="ghost"
         busy={signOut.isPending}
-        onPress={() => signOut.mutate()}
+        onPress={() => {
+          signOut.mutate();
+        }}
       />
     </Screen>
   );
 }
 
-function Boxes({ house }: { house: House }) {
-  const session = useSession();
-  const houses = session.me?.houses ?? [];
-  const setHouse = useSetHouse();
-  const [q, setQ] = useState('');
-  const input = q.trim();
-  const [query, setQuery] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => setQuery(input), input ? 450 : 0);
-    return () => clearTimeout(timer);
-  }, [input]);
-  const list = useQuery(queries.boxes(house.id, query));
-  const awaitingQuery = query !== input || list.isPlaceholderData;
-  const boxes: BoxSummary[] | undefined = awaitingQuery ? undefined : list.data;
-  const error = !awaitingQuery && list.error ? errMsg(list.error) : null;
-  const [refreshing, setRefreshing] = useState(false);
-  async function refresh() {
-    setRefreshing(true);
-    await list.refetch();
-    setRefreshing(false);
-  }
-  const [printerOptionsOpen, setPrinterOptionsOpen] = useState(false);
-  const printer = usePrinter();
-  const household = useHousehold();
-  const localReady = printer.status === 'connected' || printer.status === 'printing';
-  // A printer on another device in this house, when this device has none connected.
-  const via =
-    localReady || household.houseId !== house.id ? undefined : remotePrinters(household)[0];
-  const printerAvailable = localReady || !!via;
-  const printingUnavailable = !printerAvailable && printer.status === 'unsupported';
+/** Boxes packed before sign-in existed live in "Home", which the old household key unlocks once. */
+function ClaimHome() {
+  const enterHouse = useEnterHouse();
+  // Browsers set up before sign-in still have the old key saved: pre-fill it.
+  const legacyKey = useQuery(queries.legacyKey()).data;
+  const form = useForm({
+    defaultValues: { key: '' },
+    values: legacyKey ? { key: legacyKey } : undefined,
+    mode: 'onChange',
+  });
+  const claim = useMutation({
+    mutationFn: (key: string) => api.claimHome(key),
+    onSuccess: enterHouse,
+  });
+  const submit = () => {
+    void form.handleSubmit(({ key }) => {
+      claim.mutate(key.trim());
+    })();
+  };
 
   return (
-    <Screen
-      safeTop
-      onRefresh={() => {
-        void refresh();
-      }}
-      refreshing={refreshing}
-    >
-      <View style={[styles.row, { justifyContent: 'space-between' }]}>
-        <View style={[styles.row, { gap: space(3), flexShrink: 1 }]}>
-          <Mark />
-          <View style={{ flexShrink: 1 }}>
-            <Text style={s.kicker} numberOfLines={1}>
-              {house.name}
-            </Text>
-            <Text style={styles.h1}>Boxes</Text>
-          </View>
-        </View>
-        <View style={[styles.row, { gap: space(1), flexShrink: 0 }]}>
-          <PrinterButton
-            availability={
-              printerAvailable ? 'ready' : printingUnavailable ? 'unavailable' : 'setup'
-            }
-            onPress={() => setPrinterOptionsOpen(true)}
-          />
-          <Button label="Settings" variant="secondary" onPress={() => router.push('/settings')} />
-        </View>
-      </View>
-      <PrinterOptions
-        visible={printerOptionsOpen}
-        houseId={house.id}
-        onClose={() => setPrinterOptionsOpen(false)}
-      />
-      {houses.length > 1 ? (
-        <Host
-          matchContents={{ horizontal: false, vertical: true }}
-          style={s.pickerHost}
-          colorScheme="light"
-          seedColor={colors.kraftDark}
-        >
-          <Picker
-            accessibilityLabel="Switch house"
-            selectedValue={house.id}
-            enabled={!setHouse.isPending}
-            onValueChange={(id) => {
-              if (id !== house.id && !setHouse.isPending) {
-                setHouse.mutate(id);
-              }
-            }}
-          >
-            {houses.map((h) => (
-              <Picker.Item key={h.id} label={h.name} value={h.id} />
-            ))}
-          </Picker>
-        </Host>
-      ) : null}
-      <Host style={s.newBoxHost}>
-        <ExpoButton
-          variant="text"
-          style={{
-            width: '100%',
-            height: 64,
-            borderRadius: radius.lg,
-            backgroundColor: colors.ink,
-          }}
-          onPress={() => router.push({ pathname: '/new', params: { house: house.id } })}
-        >
-          <ExpoText textStyle={{ ...styles.buttonText, ...styles.buttonTextBig, color: '#fff' }}>
-            ＋ New box
-          </ExpoText>
-        </ExpoButton>
-      </Host>
-      <Field
-        value={q}
-        onChangeText={setQ}
-        accessibilityLabel="Search boxes"
-        placeholder="Search for cables, baking supplies, #12…"
+    <Card>
+      <Text style={styles.h2}>Claim your existing boxes</Text>
+      <Text style={styles.body}>
+        Boxes packed before sign-in live in a house called “Home”. Enter the old household key once
+        to become its owner.
+      </Text>
+      <FormField
+        control={form.control}
+        name="key"
+        rules={{ validate: (key) => key.trim().length > 0 || 'Enter the household key' }}
+        label="Household key"
         autoCapitalize="none"
         autoCorrect={false}
-        clearButtonMode="while-editing"
-        returnKeyType="search"
+        secureTextEntry
+        onSubmitEditing={submit}
       />
-      {error ? (
-        <Banner tone="error">{error}</Banner>
-      ) : !boxes ? (
-        <ActivityIndicator
-          color={colors.kraft}
-          accessibilityLabel={input ? 'Searching boxes' : 'Loading boxes'}
-        />
-      ) : boxes.length === 0 ? (
-        <View style={s.empty}>
-          <Mark size={64} />
-          <Text style={[styles.h2, { textAlign: 'center' }]}>
-            {input ? `Nothing matches “${input}”` : 'No boxes yet'}
-          </Text>
-          <Text style={[styles.muted, { textAlign: 'center' }]}>
-            {input
-              ? 'Try an item name, a description like “baking supplies”, or a box number such as #12.'
-              : 'Before you close a box, tap “New box” and photograph what’s inside. You’ll get a contents list and a label to print.'}
-          </Text>
-        </View>
-      ) : (
-        <View style={{ gap: space(2) }}>
-          {boxes.map((b) => (
-            <Pressable
-              key={b.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Box ${b.number}, ${b.title}${b.status === 'unpacked' ? ', unpacked' : ''}`}
-              onPress={() => router.push(`/b/${b.id}`)}
-              style={({ pressed }) => [s.box, pressed && { opacity: 0.85 }]}
+      {claim.error ? <Banner tone="error">{claim.error.message}</Banner> : null}
+      <Button
+        label="Claim Home"
+        busy={claim.isPending}
+        disabled={!form.formState.isValid}
+        onPress={submit}
+      />
+    </Card>
+  );
+}
+
+/** The text in the search field, and the same text once typing has paused (what is actually searched for). */
+function useSearch() {
+  const [text, setText] = useState('');
+  const input = text.trim();
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    // Clearing the field shows the full list at once.
+    const timer = setTimeout(setQuery, input ? SEARCH_DELAY_MS : 0, input);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [input]);
+  return { text, setText, input, query };
+}
+
+function Boxes({ house, houses }: { house: House; houses: House[] }) {
+  const setHouse = useSetHouse();
+  const search = useSearch();
+  const list = useQuery(queries.boxes(house.id, search.query));
+  // Rows for an older query are not the answer to what is in the field now.
+  const current = search.query === search.input && !list.isPlaceholderData;
+  const boxes = current ? list.data : undefined;
+  const refresh = useMutation({ mutationFn: () => list.refetch() });
+
+  return (
+    <ListScreen
+      onRefresh={refresh.mutate}
+      refreshing={refresh.isPending}
+      data={boxes ?? []}
+      keyExtractor={(box) => box.id}
+      renderItem={({ item }) => <BoxRow box={item} />}
+      header={
+        <View style={s.header}>
+          <View style={styles.spread}>
+            <View style={[s.brand, styles.shrink]}>
+              <Mark />
+              <View style={styles.shrink}>
+                <Text style={styles.kicker} numberOfLines={1}>
+                  {house.name}
+                </Text>
+                <Text style={styles.h1} accessibilityRole="header">
+                  Boxes
+                </Text>
+              </View>
+            </View>
+            <View style={s.actions}>
+              <PrinterMenu houseId={house.id} />
+              <IconButton
+                symbol={{ ios: 'gearshape', android: 'settings', web: 'settings' }}
+                label="Settings"
+                onPress={() => {
+                  router.push('/settings');
+                }}
+              />
+            </View>
+          </View>
+          {houses.length > 1 ? (
+            <Host
+              matchContents={{ horizontal: false, vertical: true }}
+              style={s.fullWidth}
+              colorScheme="light"
+              seedColor={colors.kraftDark}
             >
-              <View
-                style={[s.num, b.status === 'unpacked' && { backgroundColor: colors.greenSoft }]}
+              <Picker
+                accessibilityLabel="Switch house"
+                selectedValue={house.id}
+                enabled={!setHouse.isPending}
+                onValueChange={(id) => {
+                  if (id !== house.id) {
+                    setHouse.mutate(id);
+                  }
+                }}
               >
-                <Text style={[s.numText, b.status === 'unpacked' && { color: colors.green }]}>
-                  {b.number}
-                </Text>
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <View style={styles.row}>
-                  <Text style={s.title} numberOfLines={1}>
-                    {b.title}
-                  </Text>
-                  {b.status === 'unpacked' ? <Text style={s.unpacked}>Unpacked</Text> : null}
-                </View>
-                {b.room ? (
-                  <Text style={s.room} numberOfLines={1}>
-                    {b.room}
-                  </Text>
-                ) : null}
-                <Text style={styles.muted} numberOfLines={2}>
-                  {b.preview || 'No items listed'}
-                  {b.item_count > 6 ? ` +${b.item_count - 6} more` : ''}
-                </Text>
-              </View>
-              <Text style={s.chevron} importantForAccessibility="no">
-                ›
-              </Text>
-            </Pressable>
-          ))}
+                {houses.map((h) => (
+                  <Picker.Item key={h.id} label={h.name} value={h.id} />
+                ))}
+              </Picker>
+            </Host>
+          ) : null}
+          <Host style={s.newBox}>
+            <ExpoButton
+              variant="text"
+              style={{
+                width: '100%',
+                height: NEW_BOX_HEIGHT,
+                borderRadius: radius.lg,
+                backgroundColor: colors.ink,
+              }}
+              onPress={() => {
+                router.push({ pathname: '/new', params: { house: house.id } });
+              }}
+            >
+              <ExpoText
+                textStyle={{ ...styles.buttonText, ...styles.buttonTextBig, color: '#fff' }}
+              >
+                ＋ New box
+              </ExpoText>
+            </ExpoButton>
+          </Host>
+          <Field
+            value={search.text}
+            onChangeText={search.setText}
+            accessibilityLabel="Search boxes"
+            placeholder="Search for cables, baking supplies, #12…"
+            autoCapitalize="none"
+            autoCorrect={false}
+            clearButtonMode="while-editing"
+            returnKeyType="search"
+          />
+          <ListStatus error={current ? list.error : null} boxes={boxes} searching={search.input} />
         </View>
-      )}
-    </Screen>
+      }
+    />
+  );
+}
+
+/** What to show in place of rows: an error, a spinner, or why the list is empty. */
+function ListStatus({
+  error,
+  boxes,
+  searching,
+}: {
+  error: Error | null;
+  boxes?: BoxSummary[];
+  searching: string;
+}) {
+  if (error) {
+    return <Banner tone="error">{error.message}</Banner>;
+  }
+  if (!boxes) {
+    return (
+      <ActivityIndicator
+        color={colors.kraft}
+        accessibilityLabel={searching ? 'Searching boxes' : 'Loading boxes'}
+      />
+    );
+  }
+  if (boxes.length > 0) {
+    return null;
+  }
+  return (
+    <View style={s.empty}>
+      <Mark size={64} />
+      <Text style={[styles.h2, styles.center]}>
+        {searching ? `Nothing matches “${searching}”` : 'No boxes yet'}
+      </Text>
+      <Text style={[styles.muted, styles.center]}>
+        {searching
+          ? 'Try an item name, a description like “baking supplies”, or a box number such as #12.'
+          : 'Before you close a box, tap “New box” and photograph what’s inside. You’ll get a contents list and a label to print.'}
+      </Text>
+    </View>
+  );
+}
+
+function BoxRow({ box }: { box: BoxSummary }) {
+  const unpacked = box.status === 'unpacked';
+  const more = box.item_count - PREVIEW_ITEMS;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Box ${box.number}, ${box.title}${unpacked ? ', unpacked' : ''}`}
+      onPress={() => {
+        router.push(`/b/${box.id}`);
+      }}
+      style={({ pressed }) => [s.box, pressed && styles.pressed]}
+    >
+      <View style={[s.number, unpacked && s.numberUnpacked]}>
+        <Text style={[s.numberText, unpacked && s.numberTextUnpacked]}>{box.number}</Text>
+      </View>
+      <View style={s.summary}>
+        <View style={styles.row}>
+          <Text style={[s.title, styles.shrink]} numberOfLines={1}>
+            {box.title}
+          </Text>
+          {unpacked ? <UnpackedBadge /> : null}
+        </View>
+        {box.room ? (
+          <Text style={s.room} numberOfLines={1}>
+            {box.room}
+          </Text>
+        ) : null}
+        <Text style={styles.muted} numberOfLines={2}>
+          {box.preview ?? 'No items listed'}
+          {more > 0 ? ` +${more} more` : ''}
+        </Text>
+      </View>
+      <Text style={s.chevron} importantForAccessibility="no">
+        ›
+      </Text>
+    </Pressable>
   );
 }
 
 const s = StyleSheet.create({
-  kicker: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.kraftDark,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  pickerHost: { width: '100%' },
-  newBoxHost: { width: '100%', height: 64 },
+  header: { gap: space(4) },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: space(3) },
+  actions: { flexDirection: 'row', alignItems: 'center' },
+  fullWidth: { width: '100%' },
+  newBox: { width: '100%', height: NEW_BOX_HEIGHT },
   box: {
     flexDirection: 'row',
     gap: space(3),
@@ -343,7 +388,7 @@ const s = StyleSheet.create({
     borderColor: colors.line,
     padding: space(3),
   },
-  num: {
+  number: {
     width: 52,
     height: 52,
     borderRadius: radius.md,
@@ -351,12 +396,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  numText: {
+  numberUnpacked: { backgroundColor: colors.greenSoft },
+  numberText: {
     fontSize: 20,
     fontWeight: '800',
     color: colors.kraftDark,
     fontVariant: ['tabular-nums'],
   },
+  numberTextUnpacked: { color: colors.green },
+  summary: { flex: 1, gap: 2 },
+  title: { fontSize: 17, fontWeight: '700', color: colors.ink },
   room: { fontSize: 13, fontWeight: '600', color: colors.kraftDark },
   chevron: { fontSize: 26, color: colors.line, marginLeft: -space(1) },
   empty: {
@@ -364,16 +413,5 @@ const s = StyleSheet.create({
     gap: space(2),
     paddingVertical: space(10),
     paddingHorizontal: space(4),
-  },
-  title: { fontSize: 17, fontWeight: '700', color: colors.ink, flexShrink: 1 },
-  unpacked: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.green,
-    backgroundColor: colors.greenSoft,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    overflow: 'hidden',
   },
 });
