@@ -3,7 +3,8 @@ import { useMemo } from 'react';
 import { Image } from 'react-native';
 
 /** On-screen preview of exactly what the D30 will print. */
-export function LabelPreview({ input, width = 320 }: { input: LabelInput; width?: number }) {
+/** Fills the available width (narrow phones), up to `maxWidth`. */
+export function LabelPreview({ input, maxWidth = 320 }: { input: LabelInput; maxWidth?: number }) {
   const uri = useMemo(() => {
     const canvas = document.createElement('canvas');
     canvas.width = LABEL_W;
@@ -20,8 +21,9 @@ export function LabelPreview({ input, width = 320 }: { input: LabelInput; width?
       source={{ uri }}
       accessibilityLabel="Label preview"
       style={{
-        width,
-        height: (width * LABEL_H) / LABEL_W,
+        width: '100%',
+        maxWidth,
+        aspectRatio: LABEL_W / LABEL_H,
         borderRadius: 6,
         borderWidth: 1,
         borderColor: '#ddd',

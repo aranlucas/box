@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,7 +11,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, MAX_WIDTH, radius, space } from './theme';
 
@@ -19,12 +20,33 @@ import { colors, MAX_WIDTH, radius, space } from './theme';
  * add the top inset again (a second inset leaves a blank band that clips scrolled content).
  * Pass `safeTop` only on screens with `headerShown: false`.
  */
-export function Screen({ children, scroll = true, safeTop = false }: { children: ReactNode; scroll?: boolean; safeTop?: boolean }) {
+type ScreenProps = {
+  children: ReactNode;
+  scroll?: boolean;
+  safeTop?: boolean;
+  /** Enables pull-to-refresh. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
+};
+
+export function Screen({ children, scroll = true, safeTop = false, onRefresh, refreshing = false }: ScreenProps) {
+  const insets = useSafeAreaInsets();
   const inner = <View style={styles.inner}>{children}</View>;
+  const edges = safeTop ? (['top', 'left', 'right'] as const) : (['left', 'right'] as const);
   return (
-    <SafeAreaView style={styles.screen} edges={safeTop ? ['top', 'left', 'right'] : ['left', 'right']}>
+    <SafeAreaView style={styles.screen} edges={scroll ? edges : [...edges, 'bottom']}>
       {scroll ? (
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          // Keep the last buttons clear of the gesture bar / home indicator.
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + space(4) }]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.kraft} colors={[colors.kraft]} />
+            ) : undefined
+          }>
           {inner}
         </ScrollView>
       ) : (

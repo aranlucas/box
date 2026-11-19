@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
 import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
@@ -128,7 +128,6 @@ export default function BoxScreen() {
       // keep any unsaved edits, rebased on the new version
       setEdit((cur) => (cur ? { base: b, draft: cur.draft } : null));
     },
-    onError: (e) => setError(e.message),
   });
   const toggleStatus = () => box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
 
@@ -139,8 +138,9 @@ export default function BoxScreen() {
       qc.invalidateQueries({ queryKey: queries.allBoxes() });
       router.replace('/');
     },
-    onError: (e) => setError(e.message),
   });
+  // Errors from the status/delete buttons show next to them, at the bottom of the screen.
+  const actionError = statusMut.error ?? deleteMut.error;
 
   function remove() {
     if (!box) return;
@@ -224,6 +224,12 @@ export default function BoxScreen() {
       ) : null}
 
       <View style={{ gap: space(1) }}>
+        {box.status === 'unpacked' || box.room ? (
+          <View style={styles.row}>
+            {box.room ? <Text style={s.kicker}>{box.room}</Text> : null}
+            {box.status === 'unpacked' ? <Text style={s.unpacked}>Unpacked</Text> : null}
+          </View>
+        ) : null}
         <TextInput
           value={draft.title}
           onChangeText={(title) => setDraft({ ...draft, title: oneLine(title) })}
@@ -326,10 +332,12 @@ export default function BoxScreen() {
         <Button
           label={box.status === 'packed' ? 'Mark unpacked' : 'Mark packed'}
           variant="ghost"
+          busy={statusMut.isPending}
           onPress={toggleStatus}
         />
-        <Button label="Delete box" variant="danger" onPress={remove} />
+        <Button label="Delete box" variant="danger" busy={deleteMut.isPending} onPress={remove} />
       </View>
+      {actionError ? <Banner tone="error">{actionError.message}</Banner> : null}
     </Screen>
   );
 }
@@ -339,7 +347,12 @@ function Photos({ box }: { box: Box }) {
   return (
     <ScrollView horizontal style={{ flexGrow: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space(2) }}>
       {box.photos.map((p) => (
-        <Pressable key={p.id} onPress={() => Platform.OS === 'web' && window.open(photoUrl(p.id), '_blank')}>
+        <Pressable
+          key={p.id}
+          accessibilityRole="imagebutton"
+          accessibilityHint="Opens the full-size photo"
+          onPress={() => (Platform.OS === 'web' ? window.open(photoUrl(p.id), '_blank') : void Linking.openURL(photoUrl(p.id)))}
+          style={({ pressed }) => pressed && { opacity: 0.85 }}>
           <Image source={{ uri: photoUrl(p.id) }} style={s.photo} accessibilityLabel="Photo of box contents" />
         </Pressable>
       ))}
@@ -365,6 +378,16 @@ const s = StyleSheet.create({
     paddingVertical: space(1),
     borderBottomWidth: 2,
     borderBottomColor: colors.line,
+  },
+  unpacked: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.green,
+    backgroundColor: colors.greenSoft,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: space(2) },
   itemInput: {
