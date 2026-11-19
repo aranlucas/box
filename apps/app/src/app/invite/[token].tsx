@@ -59,18 +59,26 @@ export default function Invite() {
       <Text style={styles.h1}>Join “{info.house_name}”</Text>
       <Card>
         <Text style={styles.body}>
-          {info.inviter_name ?? 'Someone'} invited you to their moving boxes. Members can add, search and print boxes for this house.
+          {info.inviter_name ?? 'Someone'} invited you to their moving boxes. Members can add,
+          search and print boxes for this house.
         </Text>
         {info.status !== 'valid' ? <Banner tone="error">{STATUS_COPY[info.status]}</Banner> : null}
         {error ? <Banner tone="error">{error}</Banner> : null}
         {!signedIn ? (
-          <Button label="Sign in to join" big onPress={() => signIn.mutate(`/invite/${token}`)} disabled={info.status !== 'valid'} />
+          <Button
+            label="Sign in to join"
+            big
+            onPress={() => signIn.mutate(`/invite/${token}`)}
+            disabled={info.status !== 'valid'}
+          />
         ) : (
           // Already-members get 200 from accept even if the link was used, so Join stays enabled.
           <Button label="Join" big busy={busy} onPress={join} />
         )}
       </Card>
-      {signedIn && displayName(session.me?.user) ? <Text style={styles.muted}>Signed in as {displayName(session.me?.user)}</Text> : null}
+      {signedIn && displayName(session.me?.user) ? (
+        <Text style={styles.muted}>Signed in as {displayName(session.me?.user)}</Text>
+      ) : null}
     </Screen>
   );
 }

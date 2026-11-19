@@ -8,7 +8,8 @@ export const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       // Don't hammer the API on 4xx (signed out, not found, forbidden); retry transient failures.
-      retry: (count, err) => !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
+      retry: (count, err) =>
+        !(err instanceof ApiError && err.status >= 400 && err.status < 500) && count < 2,
     },
   },
 });

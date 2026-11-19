@@ -7,15 +7,23 @@ import type { FormDataPhoto } from './api';
 const LONG_EDGE = 1600;
 
 /** Opens the camera (or the library), then downsizes to ~1600px JPEG for a fast upload. */
-export async function takeBoxPhoto(source: 'camera' | 'library' = 'camera'): Promise<FormDataPhoto | null> {
+export async function takeBoxPhoto(
+  source: 'camera' | 'library' = 'camera',
+): Promise<FormDataPhoto | null> {
   if (Platform.OS !== 'web' && source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) throw new Error('Camera permission is needed to photograph boxes.');
+    if (!perm.granted) {
+      throw new Error('Camera permission is needed to photograph boxes.');
+    }
   }
   const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 1, exif: false };
   const result =
-    source === 'camera' ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
-  if (result.canceled || !result.assets[0]) return null;
+    source === 'camera'
+      ? await ImagePicker.launchCameraAsync(opts)
+      : await ImagePicker.launchImageLibraryAsync(opts);
+  if (result.canceled || !result.assets[0]) {
+    return null;
+  }
   const asset = result.assets[0];
 
   const landscape = asset.width >= asset.height;

@@ -1,13 +1,23 @@
 import { useSyncExternalStore } from 'react';
 
-export type PrinterStatus = 'unsupported' | 'disconnected' | 'connecting' | 'connected' | 'printing';
+export type PrinterStatus =
+  | 'unsupported'
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'printing';
 export type PrinterState = { status: PrinterStatus; name?: string; error?: string };
 
 /** Tiny observable store (printer state, household printers). */
 export function createStore<T extends object>(initial: T) {
   let state = initial;
   const listeners = new Set<() => void>();
-  const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
   return {
     get: () => state,
     subscribe,
@@ -16,7 +26,11 @@ export function createStore<T extends object>(initial: T) {
       listeners.forEach((l) => l());
     },
     useState: () =>
-      useSyncExternalStore(subscribe, () => state, () => state),
+      useSyncExternalStore(
+        subscribe,
+        () => state,
+        () => state,
+      ),
   };
 }
 

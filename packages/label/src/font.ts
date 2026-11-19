@@ -60,7 +60,7 @@ const RAW: Record<string, string> = {
 export const FONT: Record<string, number[]> = Object.fromEntries(
   Object.entries(RAW).map(([ch, rows]) => [
     ch,
-    rows.split(' ').map((r) => [...r].reduce((m, c) => (m << 1) | (c === '#' ? 1 : 0), 0)),
+    rows.split(' ').map((r) => r.split('').reduce((m, c) => (m << 1) | (c === '#' ? 1 : 0), 0)),
   ]),
 );
 
@@ -72,7 +72,7 @@ export function normalizeText(s: string): string {
   } catch {
     // normalize unavailable (some JS engines) — keep as is
   }
-  return [...t.replace(/\s+/g, ' ').trim()]
+  return Array.from(t.replace(/\s+/g, ' ').trim())
     .map((c) => (FONT[c] ? c : c === '_' ? '-' : '?'))
     .join('');
 }

@@ -5,6 +5,7 @@
 **Goal:** Replace the household key with sign-in from `auth.aranlucas.workers.dev`, give every box a house, and let owners invite members with single-use links.
 
 **Architecture:**
+
 - The box Worker is a confidential OIDC client. It runs the authorization-code flow with PKCE, verifies the ID token with `jose`, and issues its own session.
   - On the web, the session is an HttpOnly cookie.
   - On Android, it is a bearer token, obtained through a one-time code bound to a challenge the app generates.
@@ -17,6 +18,7 @@
 ## Global Constraints
 
 **OIDC**
+
 - Issuer: `https://auth.aranlucas.workers.dev/api/auth`
 - Authorize: `…/oauth2/authorize`; token: `…/oauth2/token`; JWKS: `…/jwks`
 - Scope: `openid profile email`; PKCE: S256; token endpoint authentication: `client_secret_basic`
@@ -24,37 +26,44 @@
 - Worker secrets: `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`. These are already in `apps/worker/.dev.vars`; the client ID is `tBKlWUfUjWpUXONjLtvJmFwwSRLdECwp`.
 
 **Sessions**
+
 - Cookie `bx_session`, set as `HttpOnly; Secure; SameSite=Lax; Path=/`.
 - Lasts 90 days. It slides: the expiry is extended when less than 60 days remain.
 - Stored as a SHA-256 hash.
 - The native app sends `Authorization: Bearer <token>`.
 
 **Native sign-in**
+
 - The app opens `/auth/login?native_challenge=<base64url(sha256(verifier))>`.
 - The callback redirects to `boxes://auth?code=<code>`. The code is single-use, valid for 60 s, and bound to the challenge.
 - The app calls `POST /auth/native/exchange {code, verifier}` and gets back `{token}`.
 
 **Invites**
+
 - The token is random; only its hash is stored.
 - An invite is single-use, expires after 7 days, and can be revoked.
 - Link format: `https://bx.aranlucas.workers.dev/invite/<token>`.
 
 **Houses**
+
 - Roles: `owner` and `member`.
 - Only users who already own a house may create another.
 - The legacy house has id `HOME0000` and name `Home`.
 
 **Legacy key**
+
 - `x-household-key` grants access to `HOME0000` only, and only while `HOME0000` has no owner.
 - `POST /api/houses/HOME0000/claim {key}` makes the caller its owner, and only while it has no owner.
 
 **Client and box APIs**
+
 - Clients send `x-house-id` for list and create.
 - Box-by-id routes check membership in the box's own house.
 - `GET /api/boxes/:id` stays public and adds `can_edit: boolean`.
 - Box numbers are unique per house, as `UNIQUE(house_id, number)`.
 
 **Safety**
+
 - The `return` path must start with `/` and not with `//`.
 - Never put `DEV_*` or dev-only values in `.dev.vars`. That file is uploaded as production secrets.
 
@@ -71,10 +80,12 @@
 ### Task 1: Migration 0002 (houses, auth tables, boxes rebuilt with `house_id`)
 
 **Files:**
+
 - Create: `apps/worker/migrations/0002_houses_auth.sql`
 - Test: `apps/worker/test/migrate-check.sh`
 
 **Interfaces:**
+
 - Produces these tables, exactly as in the spec's data model: `users`, `sessions`, `auth_requests`, `native_codes`, `houses`, `members`, `invites`, and `boxes` with `house_id TEXT NOT NULL REFERENCES houses(id)` and `UNIQUE(house_id, number)`.
 - Seeds the house `('HOME0000','Home')`.
 
@@ -91,11 +102,13 @@
 ### Task 2: OIDC client, sessions, auth routes
 
 **Files:**
+
 - Create: `apps/worker/src/auth/oidc.ts`, `apps/worker/src/auth/session.ts`, `apps/worker/src/auth/routes.ts`, `apps/worker/src/util.ts`
 - Modify: `apps/worker/cloudflare.config.ts` (add the `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET` secrets), `apps/worker/package.json` (add `jose` and `vitest`)
 - Test: `apps/worker/test/auth.test.ts` (vitest, Node; no D1)
 
 **Interfaces:**
+
 - `util.ts`:
   - `randomToken(bytes=32): string` (base64url)
   - `sha256Hex(s: string): Promise<string>`
@@ -131,10 +144,12 @@
 ### Task 3: Houses, invites, claim, house-scoped boxes
 
 **Files:**
+
 - Create: `apps/worker/src/houses.ts`, `apps/worker/test/api-check.sh`
 - Modify: `apps/worker/src/index.ts` (replace `requireKey` with `requireUser`, `houseFromRequest` and `requireBoxMember`; scope every box query by `house_id`; mount `authRoutes`; add `/invite/*` and `/auth/*` to the Worker-first routes in `cloudflare.config.ts`)
 
 **Interfaces:**
+
 - Consumes `userFromRequest` and `createSession` from Task 2.
 - Produces these routes:
   - `GET /api/me` → `{user: {id, name, email} | null, houses: {id, name, role}[], legacyHomeClaimable: boolean}`
@@ -166,11 +181,13 @@
 ### Task 4: App sign-in, session and house context
 
 **Files:**
+
 - Create: `apps/app/src/lib/auth.ts`, `apps/app/src/lib/auth.web.ts`, `apps/app/src/lib/session-store.ts`
 - Modify: `apps/app/src/lib/api.ts` (remove the household key; send `x-house-id` and `Authorization` on native; add `me`, `houses`, `invites` and `claimHome` calls), `apps/app/package.json` (`expo-secure-store`, `expo-crypto` via `npx expo install`)
 - Delete: `apps/app/src/app/setup.tsx`
 
 **Interfaces:**
+
 - `auth.ts` (native):
   - `signIn(): Promise<boolean>`. It generates a verifier with `expo-crypto` `getRandomBytes(32)`, computes the challenge by SHA-256 digest converted to base64url, calls `WebBrowser.openAuthSessionAsync(API_BASE + '/auth/login?native_challenge=…', 'boxes://auth')`, exchanges the code, and stores the token with SecureStore under `session-token`.
   - `signOut(): Promise<void>`
@@ -189,10 +206,12 @@
 ### Task 5: App screens (first run, claim, house and members, invites, switcher, box editing)
 
 **Files:**
+
 - Modify: `apps/app/src/app/index.tsx`, `apps/app/src/app/b/[id].tsx` (use `box.can_edit` instead of key presence), `apps/app/src/app/_layout.tsx`
 - Create: `apps/app/src/app/house.tsx`, `apps/app/src/app/invite/[token].tsx`
 
 **Behaviour:**
+
 - **Index, signed out:** "Sign in" button, plus the existing "Just unpacking?" hint.
 - **Index, signed in with no house:** a "Claim your existing boxes" card (key field → `claimHome`) shown when `legacyHomeClaimable`, plus "Ask a household member for an invite link."
 - **Index, signed in with a house:** the house name in the header. Tapping it switches house when there is more than one. A "People" link goes to `/house`, and "Sign out" sits in the footer.
@@ -201,7 +220,7 @@
   - Owners also see "Invite someone", which creates a link and opens the share sheet via `Share.share({message: url})`. On the web it copies to the clipboard as a fallback.
   - Owners also see pending invites with Revoke, Remove member, and "New house" (name field).
 - **`/invite/[token]`:**
-  - Shows "Join *house* (invited by *name*)" and the invite's status.
+  - Shows "Join _house_ (invited by _name_)" and the invite's status.
   - Signed out: "Sign in to join", which returns to this page.
   - Signed in: "Join", which accepts, sets the current house, and then goes to `/`.
 

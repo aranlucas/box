@@ -24,7 +24,9 @@ export function encodeD30(bmp: Bitmap, rotation: Rotation = 'cw'): D30Job {
 
   for (let sy = 0; sy < bmp.height; sy++) {
     for (let sx = 0; sx < bmp.width; sx++) {
-      if (!bmp.data[sy * bmp.width + sx]) continue;
+      if (!bmp.data[sy * bmp.width + sx]) {
+        continue;
+      }
       // cw: (x, y) -> (H-1-y, x);  ccw: (x, y) -> (y, W-1-x)
       const dx = rotation === 'cw' ? bmp.height - 1 - sy : sy;
       const dy = rotation === 'cw' ? sx : bmp.width - 1 - sx;
@@ -33,25 +35,37 @@ export function encodeD30(bmp: Bitmap, rotation: Rotation = 'cw'): D30Job {
   }
 
   const header = new Uint8Array([
-    0x1b, 0x40,
-    0x1d, 0x76, 0x30, 0x00,
-    wBytes & 0xff, (wBytes >> 8) & 0xff,
-    rows & 0xff, (rows >> 8) & 0xff,
+    0x1b,
+    0x40,
+    0x1d,
+    0x76,
+    0x30,
+    0x00,
+    wBytes & 0xff,
+    (wBytes >> 8) & 0xff,
+    rows & 0xff,
+    (rows >> 8) & 0xff,
   ]);
   const footer = new Uint8Array([0x1b, 0x64, 0x00]);
   return { header, data, footer };
 }
 
 export function chunks(bytes: Uint8Array, size: number): Uint8Array[] {
-  if (size <= 0) throw new Error('chunk size must be > 0');
+  if (size <= 0) {
+    throw new Error('chunk size must be > 0');
+  }
   const out: Uint8Array[] = [];
-  for (let i = 0; i < bytes.length; i += size) out.push(bytes.subarray(i, i + size));
+  for (let i = 0; i < bytes.length; i += size) {
+    out.push(bytes.subarray(i, i + size));
+  }
   return out;
 }
 
 /** Fraction of black dots — the D30 can fail on very dark labels (> ~60%). */
 export function inkCoverage(bmp: Bitmap): number {
   let n = 0;
-  for (let i = 0; i < bmp.data.length; i++) n += bmp.data[i];
+  for (let i = 0; i < bmp.data.length; i++) {
+    n += bmp.data[i];
+  }
   return n / bmp.data.length;
 }

@@ -21,13 +21,18 @@ export default function NewBox() {
   const [photo, setPhoto] = useState<FormDataPhoto | null>(null);
   const create = useMutation({
     mutationFn: (p: FormDataPhoto) => {
-      if (!houseId) throw new Error('Pick a house first.');
+      if (!houseId) {
+        throw new Error('Pick a house first.');
+      }
       return api.createBox(houseId, p);
     },
     onSuccess: (res) => {
       qc.setQueryData(queries.box(res.box.id).queryKey, res.box);
-      qc.invalidateQueries({ queryKey: queries.allBoxes() });
-      router.replace({ pathname: '/b/[id]', params: { id: res.box.id, fresh: res.aiFailed ? 'ai-failed' : '1' } });
+      void qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      router.replace({
+        pathname: '/b/[id]',
+        params: { id: res.box.id, fresh: res.aiFailed ? 'ai-failed' : '1' },
+      });
     },
   });
   const [pickError, setPickError] = useState<string | null>(null);
@@ -48,10 +53,20 @@ export default function NewBox() {
   if (create.isPending) {
     return (
       <Screen>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space(4), paddingVertical: space(20) }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: space(4),
+            paddingVertical: space(20),
+          }}
+        >
           <ActivityIndicator size="large" color={colors.kraft} />
           <Text style={styles.h2}>Reading the box…</Text>
-          <Text style={[styles.muted, { textAlign: 'center' }]}>Listing what’s inside and picking a title. This takes a few seconds.</Text>
+          <Text style={[styles.muted, { textAlign: 'center' }]}>
+            Listing what’s inside and picking a title. This takes a few seconds.
+          </Text>
         </View>
       </Screen>
     );
@@ -60,13 +75,28 @@ export default function NewBox() {
   return (
     <Screen>
       <Text style={styles.body}>
-        Take one photo looking into the open box. Spread things out a little so the top layer is visible.
+        Take one photo looking into the open box. Spread things out a little so the top layer is
+        visible.
       </Text>
       {houseName ? <Text style={styles.muted}>Adding to {houseName}</Text> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {create.isError && photo ? <Button label="Retry upload" onPress={() => create.mutate(photo)} /> : null}
-      <Button label="Take photo" big onPress={() => go('camera')} />
-      <Button label="Choose from photos" variant="secondary" onPress={() => go('library')} />
+      {create.isError && photo ? (
+        <Button label="Retry upload" onPress={() => create.mutate(photo)} />
+      ) : null}
+      <Button
+        label="Take photo"
+        big
+        onPress={() => {
+          void go('camera');
+        }}
+      />
+      <Button
+        label="Choose from photos"
+        variant="secondary"
+        onPress={() => {
+          void go('library');
+        }}
+      />
     </Screen>
   );
 }

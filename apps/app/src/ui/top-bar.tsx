@@ -22,7 +22,8 @@ export function TopBar({ navigation, options, route, back }: NativeStackHeaderPr
               accessibilityRole="button"
               accessibilityLabel="Back"
               hitSlop={8}
-              style={({ pressed }) => [s.back, pressed && { opacity: 0.6 }]}>
+              style={({ pressed }) => [s.back, pressed && { opacity: 0.6 }]}
+            >
               <Text style={s.backText}>‹ Back</Text>
             </Pressable>
           ) : null}
@@ -30,7 +31,9 @@ export function TopBar({ navigation, options, route, back }: NativeStackHeaderPr
         <Text style={s.title} numberOfLines={1} accessibilityRole="header">
           {title}
         </Text>
-        <View style={[s.side, s.right]}>{options.headerRight?.({ canGoBack: !!back, tintColor: colors.kraftDark })}</View>
+        <View style={[s.side, s.right]}>
+          {options.headerRight?.({ canGoBack: !!back, tintColor: colors.kraftDark })}
+        </View>
       </View>
     </View>
   );

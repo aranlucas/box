@@ -25,11 +25,15 @@ function toBmpDataUri(bmp: Bitmap): string {
   for (let y = 0; y < bmp.height; y++) {
     const row = offset + (bmp.height - 1 - y) * rowBytes;
     for (let x = 0; x < bmp.width; x++) {
-      if (bmp.data[y * bmp.width + x]) buf[row + (x >> 3)] |= 0x80 >> (x & 7);
+      if (bmp.data[y * bmp.width + x]) {
+        buf[row + (x >> 3)] |= 0x80 >> (x & 7);
+      }
     }
   }
   let bin = '';
-  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+  for (let i = 0; i < buf.length; i++) {
+    bin += String.fromCharCode(buf[i]);
+  }
   return `data:image/bmp;base64,${btoa(bin)}`;
 }
 
@@ -42,7 +46,14 @@ export function LabelPreview({ input, maxWidth = 320 }: { input: LabelInput; max
       source={{ uri }}
       accessibilityLabel="Label preview"
       resizeMethod="scale"
-      style={{ width: '100%', maxWidth, aspectRatio: LABEL_W / LABEL_H, borderRadius: 6, borderWidth: 1, borderColor: '#ddd' }}
+      style={{
+        width: '100%',
+        maxWidth,
+        aspectRatio: LABEL_W / LABEL_H,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#ddd',
+      }}
     />
   );
 }

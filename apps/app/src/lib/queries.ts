@@ -44,7 +44,8 @@ export const queries = {
       staleTime: Infinity,
     }),
 
-  invite: (token: string) => queryOptions({ queryKey: ['invite', token], queryFn: () => api.inviteInfo(token) }),
+  invite: (token: string) =>
+    queryOptions({ queryKey: ['invite', token], queryFn: () => api.inviteInfo(token) }),
 
   /** Silently reconnect to the last-used printer once per app session (shared across screens). */
   printerReconnect: () =>
