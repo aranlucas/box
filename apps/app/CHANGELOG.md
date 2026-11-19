@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.1](https://github.com/aranlucas/moving-journey/compare/v1.5.0...v1.5.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **app:** speed up lists and preference storage ([#17](https://github.com/aranlucas/moving-journey/issues/17)) ([c3d6df5](https://github.com/aranlucas/moving-journey/commit/c3d6df5e40507f6c58a3d943464f1303b2b846f9))
+
 ## [1.5.0](https://github.com/aranlucas/moving-journey/compare/v1.4.1...v1.5.0) (2026-11-19)
 
 
