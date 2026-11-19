@@ -46,7 +46,7 @@ export function disconnectPrinter() {
 
 /**
  * Print on this device's printer. With `connect: false` (used when printing a job relayed from
- * another household device) it never opens a picker or scans: it prints only if already connected.
+ * another device in the house) it never opens a picker or scans: it prints only if already connected.
  */
 export async function printLabel(input: LabelInput, opts: { rotation?: Rotation; connect?: boolean } = {}) {
   const { rotation = 'cw', connect = true } = opts;

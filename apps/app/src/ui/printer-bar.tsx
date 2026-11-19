@@ -1,21 +1,21 @@
-import { useEffect } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { remotePrinters, useHousehold } from '@/lib/household';
-import { connectPrinter, disconnectPrinter, tryReconnect, usePrinter } from '@/lib/printer';
+import { connectPrinter, disconnectPrinter, usePrinter } from '@/lib/printer';
+import { queries } from '@/lib/queries';
 
 import { colors, radius, space } from './theme';
 
 /**
- * Printer status + connect control. When this device has no printer but someone in the household
- * does, it offers to print through theirs instead. `showTable` adds the household connection table.
+ * Printer status + connect control. When this device has no printer but another device in the
+ * current house does, it offers to print through that one. `showTable` adds the house's printer table.
  */
 export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
   const state = usePrinter();
   const household = useHousehold();
-  useEffect(() => {
-    tryReconnect();
-  }, []);
+  useQuery(queries.printerReconnect());
+  const connect = useMutation({ mutationFn: (opts: { acceptAll?: boolean }) => connectPrinter(opts) });
 
   const supported = state.status !== 'unsupported';
   const connected = state.status === 'connected' || state.status === 'printing';
@@ -31,9 +31,9 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
       onPress: disconnectPrinter,
     };
   else if (via) chip = { label: `Print via ${via.device_name}`, on: true };
-  else if (supported) chip = { label: 'Connect printer', on: false, onPress: () => connectPrinter() };
+  else if (supported) chip = { label: 'Connect printer', on: false, onPress: () => connect.mutate({}) };
 
-  const served = household.lastServed && Date.now() - household.lastServed.at < 10 * 60_000 ? household.lastServed : null;
+  const served = household.lastServed;
 
   return (
     <View style={{ gap: space(1) }}>
@@ -48,7 +48,7 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
             <Text style={s.chipText}>{chip.label}</Text>
           </Pressable>
           {supported && !connected && state.status !== 'connecting' ? (
-            <Pressable onPress={() => connectPrinter(via ? {} : { acceptAll: true })}>
+            <Pressable onPress={() => connect.mutate(via ? {} : { acceptAll: true })}>
               <Text style={s.link}>{via ? 'Connect one here instead' : 'Printer not listed?'}</Text>
             </Pressable>
           ) : null}
@@ -57,15 +57,15 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
 
       {connected && household.sharing ? (
         <Text style={s.help}>
-          Shared with your household{served ? ` · printed box #${served.number} for another device` : ''}. Keep the app open
+          Shared with your house{served ? ` · printed box #${served.number} for another device` : ''}. Keep the app open
           here so others can print.
         </Text>
       ) : null}
       {!connected && !via ? (
         <Text style={s.help}>
           {supported
-            ? 'Or connect the D30 on any household device, and everyone can print through it.'
-            : 'No printer is connected in your household. Connect the D30 from the Android app or Chrome on another device and keep it open. Then you can print from here.'}
+            ? 'Or connect the D30 on any device in your house, and everyone can print through it.'
+            : 'No printer is connected in your house. Connect the D30 from the Android app or Chrome on another device and keep it open. Then you can print from here.'}
         </Text>
       ) : null}
       {state.error ? <Text style={[s.help, { color: colors.red }]}>{state.error}</Text> : null}
@@ -75,12 +75,12 @@ export function PrinterBar({ showTable = false }: { showTable?: boolean }) {
   );
 }
 
-/** The household connection status table: every device that can print right now. */
+/** The house's connection status table: every device in it that can print right now. */
 function HouseholdTable() {
   const { printers, deviceId } = useHousehold();
   return (
-    <View style={s.table} accessibilityLabel="Household printers">
-      <Text style={s.tableHead}>Household printers</Text>
+    <View style={s.table} accessibilityLabel="Printers in this house">
+      <Text style={s.tableHead}>Printers in this house</Text>
       {printers.map((p) => (
         <View key={p.device_id} style={s.tableRow}>
           <View style={[s.dot, { backgroundColor: colors.green }]} />

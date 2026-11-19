@@ -1,84 +1,85 @@
 import { titleLayout } from '@mj/label';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { api, boxUrl, getHouseholdKey, photoUrl, type Box, type Item } from '@/lib/api';
+import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
+import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
+import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printAnywhere, remotePrinters, useHousehold } from '@/lib/household';
 import { usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
+import { FormField } from '@/ui/form-field';
 import { LabelPreview } from '@/ui/label-preview';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
-type Draft = { title: string; room: string; notes: string; items: Item[] };
-const toDraft = (b: Box): Draft => ({ title: b.title, room: b.room ?? '', notes: b.notes ?? '', items: b.items });
-
 export default function BoxScreen() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const boxId = (id ?? '').toUpperCase();
-  const [box, setBox] = useState<Box | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [canEdit, setCanEdit] = useState(false);
+  const qc = useQueryClient();
+  const boxQuery = useQuery(queries.box(boxId));
+  const box = boxQuery.data ?? null;
+  // Local edits plus the server version they started from; null = no unsaved changes.
+  const [edit, setEdit] = useState<Edit | null>(null);
+  const draft = edit?.draft ?? (box ? toDraft(box) : null);
+  const setDraft = (d: Draft) => setEdit((cur) => ({ base: cur?.base ?? box!, draft: d }));
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [addingPhoto, setAddingPhoto] = useState(false);
-  const [newItem, setNewItem] = useState('');
+  const itemForm = useForm<{ name: string }>({ defaultValues: { name: '' } });
   const [printing, setPrinting] = useState(false);
   const printer = usePrinter();
   const household = useHousehold();
   const localReady = printer.status === 'connected' || printer.status === 'printing';
-  const via = localReady ? undefined : remotePrinters(household)[0];
+  // A printer on another device in this box's house, when this device has none connected.
+  const via = localReady || !box || box.house_id !== household.houseId ? undefined : remotePrinters(household)[0];
 
-  const load = useCallback(async () => {
-    try {
-      const b = await api.getBox(boxId);
-      setBox(b);
-      setDraft(toDraft(b));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [boxId]);
+  /** Server returned a fresh box: update the cache and refresh lists. */
+  function cache(b: Box) {
+    qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: b.can_edit ?? box?.can_edit });
+    qc.invalidateQueries({ queryKey: queries.allBoxes() });
+  }
 
-  useEffect(() => {
-    load();
-    getHouseholdKey().then((k) => setCanEdit(!!k));
-  }, [load]);
-
-  const dirty = useMemo(() => {
-    if (!box || !draft) return false;
-    return (
-      draft.title !== box.title ||
-      draft.room !== (box.room ?? '') ||
-      draft.notes !== (box.notes ?? '') ||
-      JSON.stringify(draft.items.map((i) => [i.name, i.quantity])) !== JSON.stringify(box.items.map((i) => [i.name, i.quantity]))
-    );
-  }, [box, draft]);
+  const dirty = useMemo(() => !!edit && hasChanges(changes(edit.base, edit.draft)), [edit]);
 
   const layout = useMemo(() => titleLayout(draft?.title ?? ''), [draft?.title]);
 
-  async function save(): Promise<Box | null> {
-    if (!box || !draft) return null;
-    if (!dirty) return box;
-    setSaving(true);
-    setError(null);
-    try {
-      let b = box;
-      if (draft.title !== box.title || draft.room !== (box.room ?? '') || draft.notes !== (box.notes ?? '')) {
-        b = await api.updateBox(box.id, { title: draft.title.trim() || `Box ${box.number}`, room: draft.room, notes: draft.notes });
-      }
-      if (JSON.stringify(draft.items) !== JSON.stringify(box.items)) b = await api.saveItems(box.id, draft.items);
-      setBox(b);
-      setDraft(toDraft(b));
+  // Sends only what changed since editing started; the item list carries the version it was based on,
+  // so it can't silently overwrite someone else's additions (server answers 409).
+  const saveMut = useMutation({
+    mutationFn: async (e: Edit): Promise<Box> => {
+      const c = changes(e.base, e.draft);
+      let b = e.base;
+      if (c.items) b = await api.saveItems(b.id, c.items, e.base.updated_at);
+      if (Object.keys(c.meta).length) b = await api.updateBox(b.id, c.meta);
       return b;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return null;
-    } finally {
-      setSaving(false);
-    }
+    },
+    onSuccess: (b, saved) => {
+      cache(b);
+      setEdit((cur) => afterSave(cur, saved.draft, b));
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        qc.invalidateQueries({ queryKey: queries.box(boxId).queryKey });
+      }
+      setError(e.message);
+    },
+  });
+
+  async function save(): Promise<Box | null> {
+    if (!box) return null;
+    if (!edit || !dirty) return box;
+    setError(null);
+    return saveMut.mutateAsync(edit).catch(() => null);
+  }
+
+  /** After a 409: throw away local edits and show the latest version. */
+  function discardEdits() {
+    setEdit(null);
+    setError(null);
   }
 
   async function print() {
@@ -88,7 +89,7 @@ export default function BoxScreen() {
     if (!b) return;
     setPrinting(true);
     try {
-      const { via: printedBy } = await printAnywhere({ number: b.number, title: b.title, url: boxUrl(b.id) });
+      const { via: printedBy } = await printAnywhere({ number: b.number, title: b.title, url: boxUrl(b.id) }, b.house_id);
       setNotice(printedBy ? `Label for box #${b.number} printed via ${printedBy}.` : `Label for box #${b.number} sent to the printer.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -97,63 +98,78 @@ export default function BoxScreen() {
     }
   }
 
+  const photoMut = useMutation({
+    mutationFn: (photo: FormDataPhoto) => api.addPhoto(boxId, photo),
+    onSuccess: ({ box: b, aiFailed }) => {
+      const added = b.items.length - (box?.items.length ?? 0);
+      cache(b);
+      setEdit((cur) => afterPhoto(cur, b));
+      setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
+    },
+    onError: (e) => setError(e.message),
+  });
+
   async function addPhoto() {
     if (!box) return;
     setError(null);
     try {
-      if (dirty) await save();
+      if (dirty && !(await save())) return;
       const photo = await takeBoxPhoto('camera');
-      if (!photo) return;
-      setAddingPhoto(true);
-      const { box: b, aiFailed } = await api.addPhoto(box.id, photo);
-      const added = b.items.length - box.items.length;
-      setBox(b);
-      setDraft(toDraft(b));
-      setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
+      if (photo) photoMut.mutate(photo);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAddingPhoto(false);
     }
   }
 
-  async function toggleStatus() {
-    if (!box) return;
-    const b = await api.updateBox(box.id, { status: box.status === 'packed' ? 'unpacked' : 'packed' });
-    setBox(b);
-    setDraft((d) => (d ? { ...d } : d));
-  }
+  const statusMut = useMutation({
+    mutationFn: (status: Box['status']) => api.updateBox(boxId, { status }),
+    onSuccess: (b) => {
+      cache(b);
+      // keep any unsaved edits, rebased on the new version
+      setEdit((cur) => (cur ? { base: b, draft: cur.draft } : null));
+    },
+    onError: (e) => setError(e.message),
+  });
+  const toggleStatus = () => box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
 
-  async function remove() {
-    if (!box) return;
-    const doDelete = async () => {
-      await api.deleteBox(box.id);
+  const deleteMut = useMutation({
+    mutationFn: () => api.deleteBox(boxId),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: queries.box(boxId).queryKey });
+      qc.invalidateQueries({ queryKey: queries.allBoxes() });
       router.replace('/');
-    };
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  function remove() {
+    if (!box) return;
     const msg = `Delete box #${box.number}? This cannot be undone.`;
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) await doDelete();
+      if (window.confirm(msg)) deleteMut.mutate();
       return;
     }
     Alert.alert('Delete box', msg, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: doDelete },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMut.mutate() },
     ]);
   }
 
-  const setItems = (fn: (items: Item[]) => Item[]) => setDraft((d) => (d ? { ...d, items: fn(d.items) } : d));
+  const setItems = (fn: (items: Item[]) => Item[]) => draft && setDraft({ ...draft, items: fn(draft.items) });
 
-  function addItem() {
-    const name = newItem.trim();
-    if (!name) return;
-    setItems((items) => [...items, { name, quantity: null, source: 'manual' }]);
-    setNewItem('');
-  }
+  const addItem = () =>
+    void itemForm.handleSubmit(({ name }) => {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      setItems((items) => [...items, { name: trimmed, quantity: null, source: 'manual' }]);
+      itemForm.reset();
+    })();
 
-  if (error && !box) {
+  if (boxQuery.error && !box) {
+    const notFound = boxQuery.error instanceof ApiError && boxQuery.error.status === 404;
     return (
       <Screen>
-        <Banner tone="error">{error === 'Not found' ? 'This box does not exist (or was deleted).' : error}</Banner>
+        <Banner tone="error">{notFound ? 'This box does not exist (or was deleted).' : boxQuery.error.message}</Banner>
       </Screen>
     );
   }
@@ -164,11 +180,14 @@ export default function BoxScreen() {
       </Screen>
     );
   }
+  const saving = saveMut.isPending;
+  const addingPhoto = photoMut.isPending;
 
   const header = <Stack.Screen options={{ title: `Box #${box.number}` }} />;
 
   // Read-only view for anyone who scanned the label without the household key.
-  if (!canEdit) {
+  // Read-only unless the viewer belongs to this box's house (server decides).
+  if (!box.can_edit) {
     return (
       <Screen>
         {header}
@@ -236,6 +255,9 @@ export default function BoxScreen() {
 
       {notice ? <Banner tone="success">{notice}</Banner> : null}
       {error ? <Banner tone="error">{error}</Banner> : null}
+      {saveMut.error instanceof ApiError && saveMut.error.status === 409 ? (
+        <Button label="Discard my edits and reload" variant="secondary" onPress={discardEdits} />
+      ) : null}
 
       <Card>
         <View style={[styles.row, { justifyContent: 'space-between' }]}>
@@ -269,15 +291,15 @@ export default function BoxScreen() {
           </View>
         ))}
         <View style={s.itemRow}>
-          <TextInput
-            value={newItem}
-            onChangeText={setNewItem}
+          <FormField
+            control={itemForm.control}
+            name="name"
             onSubmitEditing={addItem}
             placeholder="Add an item…"
-            placeholderTextColor={colors.muted}
             returnKeyType="done"
-            blurOnSubmit={false}
-            style={[s.itemInput, { flex: 1 }]}
+            submitBehavior="submit"
+            containerStyle={{ flex: 1 }}
+            style={s.itemInput}
           />
           <Button label="Add" variant="secondary" onPress={addItem} />
         </View>

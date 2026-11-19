@@ -1,6 +1,6 @@
-// Household printer sharing: print from any device through whichever household device has the
-// D30 connected. Works on every platform (it's just HTTP), so an iPhone — which has no Web
-// Bluetooth — can print through an Android phone or a Chrome tab that's connected.
+// Shared printing within a house: print from any member's device through whichever device in the
+// current house has the D30 connected. Works on every platform (it's just HTTP), so an iPhone —
+// which has no Web Bluetooth — can print through an Android phone or a Chrome tab that's connected.
 //
 // - Host: while this device's printer is connected and the app is in the foreground, heartbeat
 //   the Worker every couple of seconds. The heartbeat keeps our row in the connection status table
@@ -9,19 +9,20 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { AppState } from 'react-native';
 
-import { api, getHouseholdKey, type HouseholdPrinter, type QueuedJob, type RemoteLabel } from './api';
+import { api, type HouseholdPrinter, type QueuedJob, type RemoteLabel } from './api';
 import { deviceName, getDeviceId } from './device';
 import { getPrinterState, printLabel, subscribePrinter } from './printer';
 import { createStore } from './printer-store';
 
 const HEARTBEAT_MS = 2_000;
 const LIST_MS = 5_000;
-const NO_KEY_MS = 15_000;
 const JOB_POLL_MS = 1_000;
 const JOB_TIMEOUT_MS = 45_000;
 
 type HouseholdState = {
-  /** The connection status table: household devices that can print right now (may include this one). */
+  /** The house this device is looking at (from the session); sharing and printing are scoped to it. */
+  houseId: string | null;
+  /** The connection status table: devices in the house that can print right now (may include this one). */
   printers: HouseholdPrinter[];
   deviceId?: string;
   /** True while this device is offering its printer to the household. */
@@ -30,7 +31,7 @@ type HouseholdState = {
   lastServed?: { number: number; at: number };
 };
 
-const store = createStore<HouseholdState>({ printers: [], sharing: false });
+const store = createStore<HouseholdState>({ houseId: null, printers: [], sharing: false });
 export const useHousehold = store.useState;
 
 // While sharing, keep the host's screen on: if it auto-locks, the app backgrounds and stops sharing.
@@ -68,7 +69,8 @@ let started = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let ticking = false;
 let rerun = false;
-let registered = false;
+/** The house this device is currently advertising its printer to, if any. */
+let registeredIn: string | null = null;
 let lastListAt = 0;
 
 /** Start sharing/polling. Call once at app start; safe to call again. */
@@ -88,7 +90,14 @@ export function startHousehold() {
   refreshHousehold();
 }
 
-/** Run a tick now (e.g. after entering the household key or a failed remote print). */
+/** Follow the session's current house. Call whenever it changes (null when signed out). */
+export function setHouseholdHouse(houseId: string | null) {
+  if (store.get().houseId === houseId) return;
+  store.set({ houseId, printers: [] });
+  refreshHousehold();
+}
+
+/** Run a tick now (e.g. after a failed remote print). */
 export function refreshHousehold() {
   if (timer) clearTimeout(timer);
   timer = null;
@@ -110,23 +119,26 @@ async function tick() {
       await goOffline();
       return;
     }
-    if (!(await getHouseholdKey())) {
-      next = NO_KEY_MS;
+    const { houseId } = store.get();
+    if (registeredIn && registeredIn !== houseId) await goOffline(); // switched house or signed out
+    if (!houseId) {
+      next = null; // resumed by setHouseholdHouse
       return;
     }
     const deviceId = await getDeviceId();
     if (localReady()) {
       next = HEARTBEAT_MS;
-      const jobs = await api.printerHeartbeat({ deviceId, deviceName: deviceName(), printerName: getPrinterState().name });
-      registered = true;
+      const jobs = await api.printerHeartbeat(houseId, { deviceId, deviceName: deviceName(), printerName: getPrinterState().name });
+      registeredIn = houseId;
       if (!store.get().sharing) store.set({ sharing: true });
-      for (const job of jobs) await serve(job, deviceId);
+      for (const job of jobs) await serve(houseId, job, deviceId);
     } else {
       await goOffline();
     }
     if (Date.now() - lastListAt >= LIST_MS) {
       lastListAt = Date.now();
-      store.set({ printers: await api.listPrinters() });
+      const printers = await api.listPrinters(houseId);
+      if (store.get().houseId === houseId) store.set({ printers });
     }
   } catch {
     // Network blip: try again next tick.
@@ -142,56 +154,60 @@ async function tick() {
 }
 
 async function goOffline() {
-  if (!registered) return;
-  registered = false;
+  const houseId = registeredIn;
+  if (!houseId) return;
+  registeredIn = null;
   store.set({ sharing: false });
-  await api.printerOffline(await getDeviceId()).catch(() => {});
+  await api.printerOffline(houseId, await getDeviceId()).catch(() => {});
 }
 
 /** Print a job relayed from another device. Never scans or opens a picker: only prints if already connected. */
-async function serve(job: QueuedJob, deviceId: string) {
+async function serve(houseId: string, job: QueuedJob, deviceId: string) {
   if (getPrinterState().status !== 'connected') return; // busy or gone: leave it for another host, or to expire
   try {
-    await api.claimPrintJob(job.id, deviceId);
+    await api.claimPrintJob(houseId, job.id, deviceId);
   } catch {
     return; // another device took it, or it expired
   }
   try {
     await serialized(() => printLabel(job.label, { connect: false }));
     store.set({ lastServed: { number: job.label.number, at: Date.now() } });
-    await api.completePrintJob(job.id, deviceId, { ok: true }).catch(() => {});
+    await api.completePrintJob(houseId, job.id, deviceId, { ok: true }).catch(() => {});
   } catch (e) {
-    await api.completePrintJob(job.id, deviceId, { ok: false, error: errMsg(e) }).catch(() => {});
+    await api.completePrintJob(houseId, job.id, deviceId, { ok: false, error: errMsg(e) }).catch(() => {});
   }
 }
 
 /**
  * Print a label wherever possible:
  * 1. this device's printer, if it's connected;
- * 2. otherwise through a household device that has one;
+ * 2. otherwise through a device in the current house that has one;
  * 3. otherwise connect a printer here (the original flow), when this device can.
- * Resolves with the name of the device that printed it (null = this one).
+ * `houseId` is the box's house (defaults to the current one). Resolves with the name of the device
+ * that printed it (null = this one).
  */
-export async function printAnywhere(label: RemoteLabel): Promise<{ via: string | null }> {
+export async function printAnywhere(label: RemoteLabel, houseId = store.get().houseId): Promise<{ via: string | null }> {
   const local = getPrinterState().status;
   if (local === 'connected' || local === 'printing') {
     await serialized(() => printLabel(label));
     return { via: null };
   }
-  if (remotePrinters().length || local === 'unsupported') return printRemote(label);
+  const remoteHere = houseId === store.get().houseId && remotePrinters().length > 0;
+  if (remoteHere || local === 'unsupported') return printRemote(label, houseId);
   await serialized(() => printLabel(label));
   return { via: null };
 }
 
-async function printRemote(label: RemoteLabel): Promise<{ via: string | null }> {
+async function printRemote(label: RemoteLabel, houseId: string | null): Promise<{ via: string | null }> {
+  if (!houseId) throw new Error('Sign in to print through another device in your house.');
   try {
-    let job = await api.createPrintJob(await getDeviceId(), label);
+    let job = await api.createPrintJob(houseId, await getDeviceId(), label);
     const queuedVia = job.via;
     const deadline = Date.now() + JOB_TIMEOUT_MS;
     while (job.status === 'queued' || job.status === 'printing') {
       if (Date.now() > deadline) throw new Error('The printer did not respond in time.');
       await sleep(JOB_POLL_MS);
-      job = await api.getPrintJob(job.id);
+      job = await api.getPrintJob(houseId, job.id);
     }
     if (job.status === 'failed') throw new Error(job.error ?? 'Printing failed.');
     return { via: job.via ?? queuedVia };
