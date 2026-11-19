@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Integration check for houses, invites, claim, house-scoped box access and shared printing.
 // Starts `cf dev` against a throwaway local D1/R2, runs the scenario, then stops it.
-// Usage: node test/api-check.mjs        (from apps/worker)
+// Usage: node test/api-check.mjs        (from apps/worker; BX_VERBOSE=1 to see the Worker's logs)
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import assert from 'node:assert/strict';
 
 const PORT = 8799;
@@ -25,31 +27,50 @@ const OIDC_PORT = 8798;
 const ISSUER = `http://127.0.0.1:${OIDC_PORT}/api/auth`;
 const { publicKey, privateKey } = await generateKeyPair('RS256');
 const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256', use: 'sig' };
-const b64url = (buf) =>
-  buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64url = (buf) => buf.toString('base64url');
 const s256 = (v) => b64url(createHash('sha256').update(v).digest());
 const issued = new Map(); // code -> { nonce, challenge, sub, name }
-// oxlint-disable-next-line typescript/no-misused-promises -- The integration test should fail on a fake issuer error.
+const discovery = {
+  issuer: ISSUER,
+  authorization_endpoint: `${ISSUER}/oauth2/authorize`,
+  token_endpoint: `${ISSUER}/oauth2/token`,
+  jwks_uri: `${ISSUER}/jwks`,
+  id_token_signing_alg_values_supported: ['RS256'],
+};
+const sendJson = (res, body, status = 200) => {
+  res.statusCode = status;
+  res.setHeader('content-type', 'application/json');
+  res.end(JSON.stringify(body));
+};
 const oidc = createServer(async (req, res) => {
-  if (req.url === '/api/auth/jwks') {
-    return res.end(JSON.stringify({ keys: [jwk] }));
-  }
-  if (req.url === '/api/auth/oauth2/token' && req.method === 'POST') {
+  if (req.url === '/api/auth/.well-known/openid-configuration') {
+    sendJson(res, discovery);
+  } else if (req.url === '/api/auth/jwks') {
+    sendJson(res, { keys: [jwk] });
+  } else if (req.url === '/api/auth/oauth2/token' && req.method === 'POST') {
     let body = '';
     for await (const chunk of req) {
       body += chunk;
     }
     const form = new URLSearchParams(body);
-    const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+    // HTTP Basic client auth form-encodes the id and secret before base64 (RFC 6749 §2.3.1).
+    const [id, secret] = Buffer.from(
+      (req.headers.authorization ?? '').replace('Basic ', ''),
+      'base64',
+    )
+      .toString()
+      .split(':')
+      .map((part) => decodeURIComponent(part.replaceAll('+', ' ')));
     const grant = issued.get(form.get('code'));
     issued.delete(form.get('code'));
     if (
-      req.headers.authorization !== `Basic ${basic}` ||
+      id !== CLIENT_ID ||
+      secret !== CLIENT_SECRET ||
       !grant ||
       s256(form.get('code_verifier')) !== grant.challenge
     ) {
-      res.statusCode = 400;
-      return res.end(JSON.stringify({ error: 'invalid_grant' }));
+      sendJson(res, { error: 'invalid_grant' }, 400);
+      return;
     }
     const id_token = await new SignJWT({
       nonce: grant.nonce,
@@ -63,13 +84,13 @@ const oidc = createServer(async (req, res) => {
       .setIssuedAt()
       .setExpirationTime('5m')
       .sign(privateKey);
-    res.setHeader('content-type', 'application/json');
-    return res.end(JSON.stringify({ id_token, access_token: 'x', token_type: 'Bearer' }));
+    sendJson(res, { id_token, access_token: 'x', token_type: 'Bearer' });
+  } else {
+    sendJson(res, { error: 'not_found' }, 404);
   }
-  res.statusCode = 404;
-  return res.end();
 });
-await new Promise((r) => oidc.listen(OIDC_PORT, '127.0.0.1', r));
+oidc.listen(OIDC_PORT, '127.0.0.1');
+await once(oidc, 'listening');
 
 execFileSync(
   'cf',
@@ -79,13 +100,16 @@ execFileSync(
   },
 );
 const server = spawn('cf', ['dev', '--', '--port', String(PORT), '--host', '127.0.0.1'], {
-  stdio: 'ignore',
+  // BX_VERBOSE=1 shows the Worker's logs, which say why a request failed.
+  stdio: process.env.BX_VERBOSE ? 'inherit' : 'ignore',
   detached: true,
   env: { ...process.env, BX_PERSIST: persist, BX_OIDC_ISSUER: ISSUER },
 });
 const stop = () => {
   try {
-    process.kill(-server.pid);
+    if (server.pid) {
+      process.kill(-server.pid);
+    }
   } catch {}
   oidc.close();
 };
@@ -99,7 +123,7 @@ async function waitUp() {
         return;
       }
     } catch {}
-    await new Promise((r) => setTimeout(r, 500));
+    await sleep(500);
   }
   throw new Error('dev server did not start');
 }
@@ -118,14 +142,10 @@ async function call(method, path, { token, key, house, json, form, cookie } = {}
   if (house) {
     headers['x-house-id'] = house;
   }
-  let body;
   if (json) {
     headers['content-type'] = 'application/json';
-    body = JSON.stringify(json);
   }
-  if (form) {
-    body = form;
-  }
+  const body = json ? JSON.stringify(json) : form;
   const res = await fetch(`${B}${path}`, { method, headers, body, redirect: 'manual' });
   const text = await res.text();
   let data;
@@ -512,7 +532,7 @@ try {
     const tok = r.data.url.split('/invite/')[1];
     const list = await call('GET', '/api/houses/HOME0000/members', { token: A });
     const pending = list.data.invites;
-    assert.ok(pending.length >= 1);
+    assert.ok(pending.length > 0);
     for (const inv of pending) {
       assert.equal(
         (await call('DELETE', `/api/houses/HOME0000/invites/${inv.id}`, { token: A })).status,
@@ -641,7 +661,7 @@ try {
           .status,
       );
     }
-    assert.ok(statuses.includes(429), `expected a 429, got ${statuses}`);
+    assert.ok(statuses.includes(429), `expected a 429, got ${statuses.join(',')}`);
   });
 
   await check(
@@ -707,7 +727,7 @@ try {
     for (let i = 0; i < 70; i++) {
       statuses.push((await call('GET', '/api/auth/check', { key: `wrong${i}` })).status);
     }
-    assert.ok(statuses.includes(429), `expected 429 among ${[...new Set(statuses)]}`);
+    assert.ok(statuses.includes(429), `expected 429 among ${[...new Set(statuses)].join(',')}`);
   });
 
   await check('native exchange rejects a bad code', async () => {
@@ -720,8 +740,8 @@ try {
   console.log(`PASS (${passed} checks)`);
   stop();
   process.exit(0);
-} catch (err) {
-  console.error(`FAIL after ${passed} checks:`, err.message);
+} catch (error) {
+  console.error(`FAIL after ${passed} checks:`, error.message);
   stop();
   process.exit(1);
 }

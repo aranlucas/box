@@ -1,11 +1,11 @@
-import { FONT, GLYPH_H, GLYPH_W } from './font';
+import { glyph, GLYPH_H, GLYPH_W } from './font';
 
 /** 1 byte per pixel, 1 = black. */
-export interface Bitmap {
+export type Bitmap = {
   width: number;
   height: number;
   data: Uint8Array;
-}
+};
 
 export function createBitmap(width: number, height: number): Bitmap {
   return { width, height, data: new Uint8Array(width * height) };
@@ -31,9 +31,7 @@ export const textHeight = (s: number) => GLYPH_H * s;
 export function drawText(b: Bitmap, text: string, x: number, y: number, scale: number): void {
   let cx = x;
   for (const ch of text) {
-    const g = FONT[ch] ?? FONT['?'];
-    for (let r = 0; r < GLYPH_H; r++) {
-      const row = g[r];
+    for (const [r, row] of glyph(ch).entries()) {
       for (let c = 0; c < GLYPH_W; c++) {
         if (row & (1 << (GLYPH_W - 1 - c))) {
           fillRect(b, cx + c * scale, y + r * scale, scale, scale);
@@ -57,7 +55,7 @@ export function bitmapToAscii(bmp: Bitmap): string {
 }
 
 /** RGBA pixels (black ink on white) for an ImageData preview. */
-export function bitmapToRGBA(bmp: Bitmap): Uint8ClampedArray {
+export function bitmapToRGBA(bmp: Bitmap) {
   const out = new Uint8ClampedArray(bmp.width * bmp.height * 4);
   for (let i = 0; i < bmp.data.length; i++) {
     const v = bmp.data[i] ? 0 : 255;

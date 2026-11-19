@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~58.0.29",
+    "@mj/api": "workspace:*",
     "@mj/label": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@tanstack/react-query": "^5.108.0",

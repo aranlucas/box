@@ -70,14 +70,15 @@ export async function extractContents(opts: {
   return {
     ...output,
     title: fitTitle(output.title),
-    // oxlint-disable-next-line oxc/no-map-spread -- Preserve all fields from the extraction schema.
-    items: output.items.filter((i) => i.name.trim()).map((i) => ({ ...i, name: i.name.trim() })),
+    items: output.items
+      .map(({ name, quantity }) => ({ name: name.trim(), quantity }))
+      .filter((item) => item.name),
   };
 }
 
 /** Make sure the title fits the printed label; drop leading words (adjectives) until it does. */
 export function fitTitle(raw: string): string {
-  let words = raw.trim().replace(/\s+/g, ' ').split(' ').filter(Boolean);
+  let words = raw.trim().split(/\s+/).filter(Boolean);
   while (words.length > 1 && !titleLayout(words.join(' ')).fits) {
     words = words.slice(1);
   }

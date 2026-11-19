@@ -29,12 +29,8 @@ export const queries = {
 
   box: (id: string) => queryOptions({ queryKey: ['box', id], queryFn: () => api.getBox(id) }),
 
-  members: (houseId: string | undefined) =>
-    queryOptions({
-      queryKey: ['members', houseId],
-      queryFn: () => api.members(houseId!),
-      enabled: !!houseId,
-    }),
+  members: (houseId: string) =>
+    queryOptions({ queryKey: ['members', houseId], queryFn: () => api.members(houseId) }),
 
   /** Household key saved by the pre-sign-in web app (v1), used to pre-fill the claim form. */
   legacyKey: () =>

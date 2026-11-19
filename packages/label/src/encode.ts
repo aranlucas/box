@@ -2,11 +2,11 @@ import type { Bitmap } from './bitmap';
 
 export type Rotation = 'cw' | 'ccw';
 
-export interface D30Job {
+export type D30Job = {
   header: Uint8Array;
   data: Uint8Array;
   footer: Uint8Array;
-}
+};
 
 /**
  * Encode a landscape design bitmap as a Phomemo D30 ESC/POS raster job.
@@ -30,7 +30,7 @@ export function encodeD30(bmp: Bitmap, rotation: Rotation = 'cw'): D30Job {
       // cw: (x, y) -> (H-1-y, x);  ccw: (x, y) -> (y, W-1-x)
       const dx = rotation === 'cw' ? bmp.height - 1 - sy : sy;
       const dy = rotation === 'cw' ? sx : bmp.width - 1 - sx;
-      data[dy * wBytes + (dx >> 3)] |= 0x80 >> (dx & 7);
+      setBit(data, dy * wBytes, dx);
     }
   }
 
@@ -50,6 +50,12 @@ export function encodeD30(bmp: Bitmap, rotation: Rotation = 'cw'): D30Job {
   return { header, data, footer };
 }
 
+/** Set dot `x` of the row starting at byte `rowStart` (MSB = leftmost dot). */
+export function setBit(bytes: Uint8Array, rowStart: number, x: number): void {
+  const i = rowStart + (x >> 3);
+  bytes[i] = (bytes[i] ?? 0) | (0x80 >> (x & 7));
+}
+
 export function chunks(bytes: Uint8Array, size: number): Uint8Array[] {
   if (size <= 0) {
     throw new Error('chunk size must be > 0');
@@ -64,8 +70,8 @@ export function chunks(bytes: Uint8Array, size: number): Uint8Array[] {
 /** Fraction of black dots — the D30 can fail on very dark labels (> ~60%). */
 export function inkCoverage(bmp: Bitmap): number {
   let n = 0;
-  for (let i = 0; i < bmp.data.length; i++) {
-    n += bmp.data[i];
+  for (const dot of bmp.data) {
+    n += dot;
   }
   return n / bmp.data.length;
 }

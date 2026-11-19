@@ -9,16 +9,16 @@ const CHUNK = 128;
 
 declare function setTimeout(cb: () => void, ms: number): unknown;
 
-export interface D30Connection {
+export type D30Connection = {
   name: string;
   print(job: D30Job, opts?: { checkMedia?: boolean }): Promise<void>;
   disconnect(): void;
   connected(): boolean;
-}
+};
 
 // Web Bluetooth is missing from TypeScript's standard library.
 type CharacteristicListener = (event: { target: { value?: DataView } }) => void;
-interface GattCharacteristic {
+type GattCharacteristic = {
   writeValue(bytes: Uint8Array): Promise<void>;
   writeValueWithResponse?(bytes: Uint8Array): Promise<void>;
   writeValueWithoutResponse?(bytes: Uint8Array): Promise<void>;
@@ -26,32 +26,37 @@ interface GattCharacteristic {
   removeEventListener(event: 'characteristicvaluechanged', listener: CharacteristicListener): void;
   startNotifications(): Promise<unknown>;
   stopNotifications(): Promise<unknown>;
-}
-interface GattService {
+};
+type GattService = {
   getCharacteristic(uuid: number): Promise<GattCharacteristic>;
-}
-interface GattServer {
+};
+type GattServer = {
   connected: boolean;
   connect(): Promise<GattServer>;
   disconnect(): void;
   getPrimaryService(uuid: number): Promise<GattService>;
-}
-interface BluetoothDevice {
+};
+type BluetoothDevice = {
   name?: string;
   gatt?: GattServer;
-}
-interface Bluetooth {
+};
+type Bluetooth = {
   requestDevice(options: {
     acceptAllDevices?: boolean;
     filters?: { namePrefix: string }[];
     optionalServices: number[];
   }): Promise<BluetoothDevice>;
   getDevices?(): Promise<BluetoothDevice[]>;
-}
+};
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+declare const navigator: { bluetooth?: Bluetooth };
 
-const bt = () => (globalThis as { navigator?: { bluetooth?: Bluetooth } }).navigator?.bluetooth;
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const bt = () => navigator.bluetooth;
 
 export function isWebBluetoothAvailable(): boolean {
   return !!bt();

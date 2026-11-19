@@ -1,9 +1,11 @@
 import * as oauth from 'oauth4webapi';
 
-declare const __BX_OIDC_ISSUER__: string | undefined;
-const ISSUER_OVERRIDE = typeof __BX_OIDC_ISSUER__ === 'string' ? __BX_OIDC_ISSUER__ : '';
-export const ISSUER = ISSUER_OVERRIDE || 'https://auth.aranlucas.workers.dev/api/auth';
-export const REDIRECT_URI = 'https://bx.aranlucas.workers.dev/auth/callback';
+import { errorMessage, PUBLIC_ORIGIN } from '../util.ts';
+
+/** Empty outside local dev, where it points sign-in at a fake auth service (see vite.config.ts). */
+declare const __BX_OIDC_ISSUER__: string;
+export const ISSUER = __BX_OIDC_ISSUER__ || 'https://auth.aranlucas.workers.dev/api/auth';
+export const REDIRECT_URI = `${PUBLIC_ORIGIN}/auth/callback`;
 const SCOPE = 'openid profile email';
 
 export type Identity = { sub: string; email?: string; name?: string };
@@ -17,6 +19,7 @@ const insecure = ISSUER.startsWith('http://');
 function requestOptions(fetchImpl?: typeof fetch) {
   return {
     ...(fetchImpl ? { [oauth.customFetch]: fetchImpl } : {}),
+    // oxlint-disable-next-line typescript/no-deprecated -- marked deprecated only to flag it as dev-only, which this is
     ...(insecure ? { [oauth.allowInsecureRequests]: true } : {}),
   };
 }
@@ -30,9 +33,9 @@ export function authServer(fetchImpl?: typeof fetch): Promise<oauth.Authorizatio
   if (fetchImpl) {
     return discover(fetchImpl);
   }
-  discovered ??= discover().catch((err) => {
+  discovered ??= discover().catch((error: unknown) => {
     discovered = undefined;
-    throw err;
+    throw error;
   });
   return discovered;
 }
@@ -60,7 +63,10 @@ export async function authorizeUrl(
   client: Pick<OidcClient, 'clientId'>,
   p: PendingSignIn,
 ) {
-  const u = new URL(as.authorization_endpoint!);
+  if (!as.authorization_endpoint) {
+    throw new Error('The auth service did not publish an authorization endpoint');
+  }
+  const u = new URL(as.authorization_endpoint);
   u.search = new URLSearchParams({
     response_type: 'code',
     client_id: client.clientId,
@@ -101,7 +107,10 @@ export async function completeSignIn(
     expectedNonce: pending.nonce,
     requireIdToken: true,
   });
-  const claims = oauth.getValidatedIdTokenClaims(tokens)!;
+  const claims = oauth.getValidatedIdTokenClaims(tokens);
+  if (!claims) {
+    throw new Error('The auth service returned no ID token');
+  }
   const identity: Identity = { sub: claims.sub };
   if (typeof claims.email === 'string' && claims.email) {
     identity.email = claims.email;
@@ -140,8 +149,8 @@ async function withUserInfo(
       console.warn(`userinfo missing name/email; claims: ${Object.keys(info).join(',')}`);
     }
     return out;
-  } catch (err) {
-    console.warn(`userinfo failed: ${err instanceof Error ? err.message : String(err)}`);
+  } catch (error) {
+    console.warn(`userinfo failed: ${errorMessage(error)}`);
     return identity;
   }
 }

@@ -2,7 +2,7 @@ import type { NativeStackHeaderProps } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, MAX_WIDTH, space } from './theme';
+import { colors, MAX_WIDTH, space, TAP } from './theme';
 
 /**
  * Web-only stack header that lines up with the page: same centred MAX_WIDTH column as <Screen>,
@@ -22,7 +22,7 @@ export function TopBar({ navigation, options, route, back }: NativeStackHeaderPr
               accessibilityRole="button"
               accessibilityLabel="Back"
               hitSlop={8}
-              style={({ pressed }) => [s.back, pressed && { opacity: 0.6 }]}
+              style={({ pressed }) => [s.back, pressed && s.pressed]}
             >
               <Text style={s.backText}>‹ Back</Text>
             </Pressable>
@@ -53,7 +53,8 @@ const s = StyleSheet.create({
   // Equal-width sides keep the title centred whether or not there's a back button.
   side: { width: 88, alignItems: 'flex-start' },
   right: { alignItems: 'flex-end' },
-  back: { minHeight: 44, justifyContent: 'center' },
+  back: { minHeight: TAP, justifyContent: 'center' },
+  pressed: { opacity: 0.6 },
   backText: { fontSize: 17, fontWeight: '600', color: colors.kraftDark },
   title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700', color: colors.ink },
 });

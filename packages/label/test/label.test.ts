@@ -79,7 +79,7 @@ describe('titleLayout', () => {
     const l = titleLayout('Bathroom towels sheets and assorted linens');
     expect(l.lines.length).toBe(2);
     expect(l.fits).toBe(false);
-    expect(l.lines[1].endsWith('…')).toBe(true);
+    expect(l.lines[1]).toMatch(/…$/);
     expect(l.lines.every((s) => s.length <= 12)).toBe(true);
   });
   it('normalizes accents and unknown chars', () => {
@@ -137,7 +137,9 @@ describe('renderLabel', () => {
   it('keeps the label edges clear', () => {
     const bmp = renderLabel(input);
     for (const y of [0, 1, 94, 95]) {
-      for (let x = 0; x < 320; x++) expect(bmp.data[y * 320 + x]).toBe(0);
+      for (let x = 0; x < 320; x++) {
+        expect(bmp.data[y * 320 + x]).toBe(0);
+      }
     }
   });
 

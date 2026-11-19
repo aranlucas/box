@@ -1,4 +1,5 @@
 import { createOpenAI } from '@ai-sdk/openai';
+import type { BoxSummary } from '@mj/api';
 import { cosineSimilarity, embedMany } from 'ai';
 
 const MODEL = 'text-embedding-3-small';
@@ -18,20 +19,6 @@ export const searchItems = `(SELECT substr(group_concat(name, ', '), 1, 1500) FR
 export const upsertEmbedding = `INSERT INTO box_search_embeddings (box_id, cache_key, embedding)
   SELECT id, ?, ? FROM boxes WHERE id = ?
   ON CONFLICT(box_id) DO UPDATE SET cache_key = excluded.cache_key, embedding = excluded.embedding`;
-
-type BoxSummary = {
-  id: string;
-  house_id: string;
-  number: number;
-  title: string;
-  room: string | null;
-  notes: string | null;
-  status: 'packed' | 'unpacked';
-  created_at: number;
-  updated_at: number;
-  item_count: number;
-  preview: string | null;
-};
 
 type SearchRow = BoxSummary & {
   keyword_match: 0 | 1 | null;
@@ -54,9 +41,11 @@ export async function searchBoxes(
     return results;
   }
 
-  const boxNumber = /^(box\s*#?\s*|#\s*)?(\d+)$/i.exec(query);
-  const number = boxNumber?.[2].replace(/^0+(?=\d)/, '') ?? '';
-  if (boxNumber?.[1]) {
+  // "12", "#12" or "box 12". Only a prefixed number is certainly a box number.
+  const { prefix, digits } =
+    /^(?<prefix>box\s*#?\s*|#\s*)?(?<digits>\d+)$/i.exec(query)?.groups ?? {};
+  const number = digits?.replace(/^0+(?=\d)/, '') ?? '';
+  if (prefix) {
     const { results } = await db
       .prepare(`${summaries} FROM boxes b WHERE b.house_id = ? AND CAST(b.number AS TEXT) = ?`)
       .bind(houseId, number)
@@ -64,7 +53,7 @@ export async function searchBoxes(
     return results;
   }
 
-  if (apiKey && !boxNumber && query.length <= 512 && /\p{L}/u.test(query)) {
+  if (!digits && query.length <= 512 && /\p{L}/u.test(query)) {
     try {
       const { results } = await db
         .prepare(
@@ -78,6 +67,7 @@ export async function searchBoxes(
 
       return await rankMatches(db, apiKey, query, results);
     } catch (error) {
+      // Keyword search below still answers.
       console.warn(
         'Semantic box search unavailable',
         error instanceof Error ? error.name : 'Unknown error',
@@ -126,29 +116,35 @@ async function rankMatches(db: D1Database, apiKey: string, query: string, rows: 
       }
 
       // A changed input invalidates its vector, including edits made during a concurrent search.
-      const vector =
-        cache_key === cacheKey && embedding ? (JSON.parse(embedding) as number[]) : null;
+      const cached = cache_key === cacheKey && embedding;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- our own cache, written by upsertEmbedding below
+      const vector = cached ? (JSON.parse(cached) as number[]) : undefined;
       return [{ box, input, cacheKey, vector }];
     },
   );
-  if (!candidates.length) {
+  if (candidates.length === 0) {
     return keywords;
   }
 
-  const missing = candidates.filter((candidate) => candidate.vector === null);
+  const missing = candidates.filter((candidate) => !candidate.vector);
   const [queryVector, ...newVectors] = await embedSearchTexts(apiKey, [
     query,
     ...missing.map(({ input }) => input),
   ]);
+  if (!queryVector) {
+    return keywords;
+  }
 
-  if (missing.length) {
+  if (missing.length > 0) {
     const upsert = db.prepare(upsertEmbedding);
     const writes = missing.map((candidate, index) => {
       candidate.vector = newVectors[index];
       return upsert.bind(candidate.cacheKey, JSON.stringify(candidate.vector), candidate.box.id);
     });
     // The matches are usable even if D1 cannot persist the cache.
-    await db.batch(writes).catch(() => console.warn('Could not cache box search embeddings'));
+    await db.batch(writes).catch(() => {
+      console.warn('Could not cache box search embeddings');
+    });
   }
 
   const related = candidates
