@@ -52,7 +52,11 @@ async function ensurePoweredOn() {
   await new Promise<void>((resolve, reject) => {
     const t = setTimeout(() => (sub.remove(), reject(new Error('Bluetooth is not available.'))), 5000);
     const sub = ble().onStateChange((s) => {
-      if (s === State.PoweredOn) (clearTimeout(t), sub.remove(), resolve());
+      if (s === State.PoweredOn) {
+        clearTimeout(t);
+        sub.remove();
+        resolve();
+      }
     }, true);
   });
 }

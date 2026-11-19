@@ -1,10 +1,13 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { authHeader } from './auth';
+import { API_BASE, publicOrigin } from './config';
+
+export { API_BASE, publicOrigin };
 
 export type Item = { id?: string; name: string; quantity: number | null; source: 'ai' | 'manual' };
 export type Photo = { id: string; created_at: number };
 export type Box = {
   id: string;
+  house_id: string;
   number: number;
   title: string;
   room: string | null;
@@ -14,75 +17,72 @@ export type Box = {
   updated_at: number;
   items: Item[];
   photos: Photo[];
+  can_edit?: boolean;
 };
 export type BoxSummary = Omit<Box, 'items' | 'photos'> & { item_count: number; preview: string | null };
+export type Role = 'owner' | 'member';
+export type House = { id: string; name: string; role: Role };
+export type User = { id: string; name: string | null; email: string | null };
+export type Me = { user: User | null; houses: House[]; legacyHomeClaimable: boolean };
+export type Member = { user_id: string; name: string | null; email: string | null; role: Role };
+export type PendingInvite = { id: string; created_at: number; expires_at: number };
+export type InviteInfo = { house_name: string; inviter_name: string | null; status: 'valid' | 'used' | 'expired' | 'revoked' };
 
-/**
- * Where the Worker lives. On the web build it's the same origin (empty base); the native app and
- * local dev point at the deployed Worker via EXPO_PUBLIC_API_URL.
- */
-export const API_BASE = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/$/, '');
-
-/** Origin printed into QR codes. Must be the deployed public origin, never localhost. */
-export function publicOrigin(): string {
-  if (process.env.EXPO_PUBLIC_PUBLIC_ORIGIN) return process.env.EXPO_PUBLIC_PUBLIC_ORIGIN.replace(/\/$/, '');
-  if (API_BASE) return API_BASE;
-  if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
-  return '';
-}
-
+export const HOME_ID = 'HOME0000';
 export const boxUrl = (id: string) => `${publicOrigin()}/b/${id}`;
 export const photoUrl = (id: string) => `${API_BASE}/api/photos/${id}`;
-
-const KEY_STORAGE = 'household-key';
-let cachedKey: string | null | undefined;
-
-export async function getHouseholdKey(): Promise<string | null> {
-  if (cachedKey !== undefined) return cachedKey;
-  cachedKey = await AsyncStorage.getItem(KEY_STORAGE).catch(() => null);
-  return cachedKey;
-}
-
-export async function setHouseholdKey(key: string | null) {
-  cachedKey = key;
-  if (key) await AsyncStorage.setItem(KEY_STORAGE, key);
-  else await AsyncStorage.removeItem(KEY_STORAGE);
-}
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public body: Record<string, unknown> = {},
   ) {
     super(message);
   }
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const key = await getHouseholdKey();
   const headers = new Headers(init.headers);
-  if (key) headers.set('x-household-key', key);
+  for (const [k, v] of Object.entries(await authHeader())) headers.set(k, v);
   if (init.body && typeof init.body === 'string') headers.set('content-type', 'application/json');
   const res = await fetch(`${API_BASE}/api${path}`, { ...init, headers });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(res.status, (body as { error?: string }).error ?? `Request failed (${res.status})`);
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new ApiError(res.status, (body.error as string) ?? `Request failed (${res.status})`, body);
   return body as T;
 }
 
+const json = (method: string, data?: unknown): RequestInit => ({ method, body: data === undefined ? undefined : JSON.stringify(data) });
+
 export const api = {
-  checkKey: (key: string) =>
-    fetch(`${API_BASE}/api/auth/check`, { headers: { 'x-household-key': key } }).then((r) => r.ok),
-  listBoxes: (q?: string) =>
-    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`).then((r) => r.boxes),
+  me: () => request<Me>('/me'),
+  createHouse: (name: string) => request<{ house: House }>('/houses', json('POST', { name })).then((r) => r.house),
+  claimHome: (key: string) => request<{ house: House }>(`/houses/${HOME_ID}/claim`, json('POST', { key })).then((r) => r.house),
+  members: (houseId: string) => request<{ members: Member[]; invites: PendingInvite[] }>(`/houses/${houseId}/members`),
+  removeMember: (houseId: string, userId: string) => request(`/houses/${houseId}/members/${userId}`, { method: 'DELETE' }),
+  createInvite: (houseId: string) => request<{ url: string; expires_at: number }>(`/houses/${houseId}/invites`, { method: 'POST' }),
+  revokeInvite: (houseId: string, inviteId: string) => request(`/houses/${houseId}/invites/${inviteId}`, { method: 'DELETE' }),
+  inviteInfo: (token: string) => request<InviteInfo>(`/invites/${token}`),
+  acceptInvite: (token: string) => request<{ house: House }>(`/invites/${token}/accept`, { method: 'POST' }).then((r) => r.house),
+
+  listBoxes: (houseId: string, q?: string) =>
+    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`, {
+      headers: { 'x-house-id': houseId },
+    }).then((r) => r.boxes),
   getBox: (id: string) => request<{ box: Box }>(`/boxes/${id}`).then((r) => r.box),
-  createBox: (photo: FormDataPhoto) =>
-    request<{ box: Box; aiFailed: boolean }>('/boxes', { method: 'POST', body: photoForm(photo) }),
+  createBox: (houseId: string, photo: FormDataPhoto) =>
+    request<{ box: Box; aiFailed: boolean }>('/boxes', {
+      method: 'POST',
+      body: photoForm(photo),
+      headers: { 'x-house-id': houseId },
+    }),
   addPhoto: (id: string, photo: FormDataPhoto) =>
     request<{ box: Box; aiFailed: boolean }>(`/boxes/${id}/photos`, { method: 'POST', body: photoForm(photo) }),
   updateBox: (id: string, patch: Partial<Pick<Box, 'title' | 'room' | 'notes' | 'status'>>) =>
-    request<{ box: Box }>(`/boxes/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }).then((r) => r.box),
-  saveItems: (id: string, items: Item[]) =>
-    request<{ box: Box }>(`/boxes/${id}/items`, { method: 'PUT', body: JSON.stringify({ items }) }).then((r) => r.box),
+    request<{ box: Box }>(`/boxes/${id}`, json('PATCH', patch)).then((r) => r.box),
+  /** ifUpdatedAt: the box version the editor started from; the server answers 409 if it changed. */
+  saveItems: (id: string, items: Item[], ifUpdatedAt?: number) =>
+    request<{ box: Box }>(`/boxes/${id}/items`, json('PUT', { items, if_updated_at: ifUpdatedAt })).then((r) => r.box),
   deleteBox: (id: string) => request<{ ok: true }>(`/boxes/${id}`, { method: 'DELETE' }),
 };
 

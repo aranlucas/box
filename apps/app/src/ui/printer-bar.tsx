@@ -1,16 +1,16 @@
-import { useEffect } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { connectPrinter, disconnectPrinter, printerHelp, tryReconnect, usePrinter } from '@/lib/printer';
+import { connectPrinter, disconnectPrinter, printerHelp, usePrinter } from '@/lib/printer';
+import { queries } from '@/lib/queries';
 
 import { colors, radius, space } from './theme';
 
 /** Compact printer status + connect control. */
 export function PrinterBar() {
   const state = usePrinter();
-  useEffect(() => {
-    tryReconnect();
-  }, []);
+  useQuery(queries.printerReconnect());
+  const connect = useMutation({ mutationFn: (opts: { acceptAll?: boolean }) => connectPrinter(opts) });
 
   if (state.status === 'unsupported') {
     return <Text style={s.help}>{printerHelp}</Text>;
@@ -31,13 +31,13 @@ export function PrinterBar() {
       <View style={s.row}>
         <Pressable
           accessibilityRole="button"
-          onPress={() => (connected ? disconnectPrinter() : connectPrinter())}
+          onPress={() => (connected ? disconnectPrinter() : connect.mutate({}))}
           style={[s.chip, connected ? s.on : s.off]}>
           <View style={[s.dot, { backgroundColor: connected ? colors.green : colors.muted }]} />
           <Text style={s.chipText}>{label}</Text>
         </Pressable>
         {!connected ? (
-          <Pressable onPress={() => connectPrinter({ acceptAll: true })}>
+          <Pressable onPress={() => connect.mutate({ acceptAll: true })}>
             <Text style={s.link}>Printer not listed?</Text>
           </Pressable>
         ) : null}

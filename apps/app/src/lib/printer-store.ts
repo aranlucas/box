@@ -14,7 +14,6 @@ export function createPrinterStore(initial: PrinterState) {
       listeners.forEach((l) => l());
     },
     useState: () =>
-      // eslint-disable-next-line react-hooks/rules-of-hooks
       useSyncExternalStore(
         (l) => (listeners.add(l), () => listeners.delete(l)),
         () => state,
