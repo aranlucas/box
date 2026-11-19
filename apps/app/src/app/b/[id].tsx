@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
+import { refreshHouseBoxes } from '@/lib/boxes';
 import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
 import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
@@ -40,7 +41,7 @@ export default function BoxScreen() {
   /** Server returned a fresh box: update the cache and refresh lists. */
   function cache(b: Box) {
     qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: b.can_edit ?? box?.can_edit });
-    qc.invalidateQueries({ queryKey: queries.allBoxes() });
+    void refreshHouseBoxes(qc, b.house_id);
   }
 
   const dirty = useMemo(() => !!edit && hasChanges(changes(edit.base, edit.draft)), [edit]);
@@ -132,10 +133,10 @@ export default function BoxScreen() {
   const toggleStatus = () => box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
 
   const deleteMut = useMutation({
-    mutationFn: () => api.deleteBox(boxId),
-    onSuccess: () => {
-      qc.removeQueries({ queryKey: queries.box(boxId).queryKey });
-      qc.invalidateQueries({ queryKey: queries.allBoxes() });
+    mutationFn: (box: Box) => api.deleteBox(box.id),
+    onSuccess: (_, removed) => {
+      qc.removeQueries({ queryKey: queries.box(removed.id).queryKey });
+      void refreshHouseBoxes(qc, removed.house_id);
       router.replace('/');
     },
   });
@@ -146,12 +147,12 @@ export default function BoxScreen() {
     if (!box) return;
     const msg = `Delete box #${box.number}? This cannot be undone.`;
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) deleteMut.mutate();
+      if (window.confirm(msg)) deleteMut.mutate(box);
       return;
     }
     Alert.alert('Delete box', msg, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteMut.mutate() },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMut.mutate(box) },
     ]);
   }
 

@@ -40,9 +40,3 @@ export function afterPhoto(current: Edit | null, next: Box): Edit | null {
   const found = next.items.filter((i) => !known.has(i.id));
   return { base: next, draft: { ...current.draft, items: [...current.draft.items, ...found] } };
 }
-
-/** placeholderData for box lists: keep old rows while typing a search, never across houses. */
-export const sameHousePlaceholder =
-  (houseId: string) =>
-  <T>(prev: T | undefined, prevQuery: { queryKey: readonly unknown[] } | undefined): T | undefined =>
-    prevQuery?.queryKey[1] === houseId ? prev : undefined;

@@ -2,12 +2,11 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { queryOptions } from '@tanstack/react-query';
 
 import { api } from './api';
-import { sameHousePlaceholder } from './draft';
 import { tryReconnect } from './printer';
 
 export const HOUSE_STORAGE_KEY = 'house-id';
+export const houseBoxesKey = (houseId: string) => ['boxes', houseId] as const;
 
-/** Every query in the app is defined here with queryOptions(), so keys and data types stay in sync. */
 export const queries = {
   me: () => queryOptions({ queryKey: ['me'], queryFn: api.me }),
 
@@ -16,15 +15,14 @@ export const queries = {
       queryKey: ['saved-house'],
       queryFn: () => AsyncStorage.getItem(HOUSE_STORAGE_KEY).catch(() => null),
       staleTime: Infinity,
+      networkMode: 'always',
     }),
 
-  /** Prefix for invalidating every box list. */
-  allBoxes: () => ['boxes'] as const,
-  boxes: (houseId: string, q: string) =>
+  boxSearch: (houseId: string, userId: string, q: string) =>
     queryOptions({
-      queryKey: ['boxes', houseId, q],
+      queryKey: [...houseBoxesKey(houseId), userId, 'search', q],
       queryFn: ({ signal }) => api.listBoxes(houseId, q, signal),
-      placeholderData: sameHousePlaceholder(houseId),
+      enabled: q.length > 0,
     }),
 
   box: (id: string) => queryOptions({ queryKey: ['box', id], queryFn: () => api.getBox(id) }),
@@ -42,6 +40,7 @@ export const queries = {
       queryKey: ['legacy-household-key'],
       queryFn: () => AsyncStorage.getItem('household-key').catch(() => null),
       staleTime: Infinity,
+      networkMode: 'always',
     }),
 
   invite: (token: string) => queryOptions({ queryKey: ['invite', token], queryFn: () => api.inviteInfo(token) }),
@@ -56,6 +55,7 @@ export const queries = {
       },
       staleTime: Infinity,
       gcTime: Infinity,
+      networkMode: 'always',
       retry: false,
       refetchOnWindowFocus: false,
     }),

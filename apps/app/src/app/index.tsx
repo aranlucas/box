@@ -1,10 +1,12 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useDbClient, useLiveQuery } from '@tanstack/react-db';
+import { focusManager, onlineManager, useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { api, type BoxSummary } from '@/lib/api';
+import { api, type House } from '@/lib/api';
+import { boxInventory } from '@/lib/boxes';
 import { queries } from '@/lib/queries';
 import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
@@ -34,7 +36,7 @@ export default function Home() {
   }
   if (!session.me?.user) return <SignedOut error={auth_error ?? session.error} />;
   if (!session.house) return <NoHouse claimable={session.me.legacyHomeClaimable} name={session.me.user.name} />;
-  return <Boxes />;
+  return <Boxes userId={session.me.user.id} house={session.house} houses={session.me.houses} />;
 }
 
 function SignedOut({ error }: { error?: string | null }) {
@@ -103,11 +105,29 @@ function NoHouse({ claimable, name }: { claimable: boolean; name: string | null 
   );
 }
 
-function Boxes() {
-  const session = useSession();
-  const house = session.house!;
-  const houses = session.me?.houses ?? [];
+function Boxes({ userId, house, houses }: { userId: string; house: House; houses: House[] }) {
   const setHouse = useSetHouse();
+  const db = useDbClient();
+  const collection = db.collection(boxInventory(house.id, userId));
+  const inventory = useLiveQuery({
+    query: (q) => q.from({ box: collection }).orderBy(({ box }) => box.number, 'desc'),
+  });
+  const liveCollection = inventory.collection;
+  const inventoryLoadFailed = inventory.isLoadingError;
+  // A failed first load requires a new DB sync run. Subsequent failures are retried by Query.
+  useEffect(() => {
+    if (!inventoryLoadFailed || !liveCollection) return;
+    const retry = (available: boolean) => {
+      if (available && onlineManager.isOnline()) void liveCollection.reload().catch(() => {});
+    };
+    const unsubscribeFocus = focusManager.subscribe(retry);
+    const unsubscribeOnline = onlineManager.subscribe(retry);
+    return () => {
+      unsubscribeFocus();
+      unsubscribeOnline();
+    };
+  }, [inventoryLoadFailed, liveCollection]);
+
   const [q, setQ] = useState('');
   const input = q.trim();
   const [query, setQuery] = useState('');
@@ -115,15 +135,29 @@ function Boxes() {
     const timer = setTimeout(() => setQuery(input), input ? 450 : 0);
     return () => clearTimeout(timer);
   }, [input]);
-  const list = useQuery(queries.boxes(house.id, query));
-  const awaitingQuery = query !== input || list.isPlaceholderData;
-  const boxes: BoxSummary[] | undefined = awaitingQuery ? undefined : list.data;
-  const error = !awaitingQuery && list.error ? errMsg(list.error) : null;
+  const search = useQuery(queries.boxSearch(house.id, userId, query));
+  const awaitingQuery = query !== input;
+  const boxes = awaitingQuery ? undefined : input ? search.data : inventory.isReady ? inventory.data : undefined;
+  const source = inventory.health?.sources[0];
+  const inventoryProblem = source?.error ?? source?.failureReason ?? inventory.health?.error;
+  const error = awaitingQuery
+    ? null
+    : input
+      ? search.error && errMsg(search.error)
+      : inventoryProblem && errMsg(inventoryProblem.cause ?? 'Could not load boxes.');
   const [refreshing, setRefreshing] = useState(false);
   async function refresh() {
+    if (refreshing || awaitingQuery || !onlineManager.isOnline()) return;
     setRefreshing(true);
-    await list.refetch();
-    setRefreshing(false);
+    try {
+      if (input) await search.refetch();
+      else if (inventoryLoadFailed) await liveCollection?.reload();
+      else if (!inventory.isCrashed) await collection.utils.refetch();
+    } catch {
+      // Query and collection errors are displayed from their current state.
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   return (

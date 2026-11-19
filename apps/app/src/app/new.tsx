@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import { api, type FormDataPhoto } from '@/lib/api';
+import { refreshHouseBoxes } from '@/lib/boxes';
 import { queries } from '@/lib/queries';
 import { useSession } from '@/lib/session';
 import { takeBoxPhoto } from '@/lib/photo';
@@ -26,7 +27,7 @@ export default function NewBox() {
     },
     onSuccess: (res) => {
       qc.setQueryData(queries.box(res.box.id).queryKey, res.box);
-      qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      void refreshHouseBoxes(qc, res.box.house_id);
       router.replace({ pathname: '/b/[id]', params: { id: res.box.id, fresh: res.aiFailed ? 'ai-failed' : '1' } });
     },
   });
