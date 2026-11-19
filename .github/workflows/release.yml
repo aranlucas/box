@@ -1,0 +1,51 @@
+# Release Please keeps a release PR open. Merging it bumps the app version and versionCode in
+# apps/app/app.json, updates the changelog and tags vX.Y.Z; this workflow then attaches the APK.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      created: ${{ steps.release.outputs['apps/app--release_created'] }}
+      tag: ${{ steps.release.outputs['apps/app--tag_name'] }}
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+
+  apk:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/android.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag }}
+      apk-name: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+
+  publish:
+    needs: [release-please, apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag }}
+          files: moving-boxes-${{ needs.release-please.outputs.tag }}-arm64.apk
+          fail_on_unmatched_files: true
