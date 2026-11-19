@@ -72,8 +72,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const api = {
   checkKey: (key: string) =>
     fetch(`${API_BASE}/api/auth/check`, { headers: { 'x-household-key': key } }).then((r) => r.ok),
-  listBoxes: (q?: string) =>
-    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`).then((r) => r.boxes),
+  listBoxes: (q?: string, signal?: AbortSignal) =>
+    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`, { signal }).then((r) => r.boxes),
   getBox: (id: string) => request<{ box: Box }>(`/boxes/${id}`).then((r) => r.box),
   createBox: (photo: FormDataPhoto) =>
     request<{ box: Box; aiFailed: boolean }>('/boxes', { method: 'POST', body: photoForm(photo) }),

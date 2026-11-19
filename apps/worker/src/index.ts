@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { Hono, type Context, type Next } from "hono";
 import { extractContents, TITLE_MAX, type Extraction } from "./ai.ts";
+import { searchBoxes } from "./search.ts";
 
 type Box = {
   id: string;
@@ -143,19 +144,8 @@ api.post("/boxes/:id/photos", requireKey, async (c) => {
 
 // List / search.
 api.get("/boxes", requireKey, async (c) => {
-  const q = c.req.query("q")?.trim();
-  const base = `SELECT b.*, (SELECT COUNT(*) FROM items i WHERE i.box_id = b.id) AS item_count,
-    (SELECT group_concat(name, ', ') FROM (SELECT name FROM items i WHERE i.box_id = b.id ORDER BY position LIMIT 6)) AS preview
-    FROM boxes b`;
-  const stmt = q
-    ? env.DB.prepare(
-        `${base} WHERE b.title LIKE ?1 OR b.room LIKE ?1 OR b.notes LIKE ?1 OR CAST(b.number AS TEXT) = ?2
-         OR EXISTS (SELECT 1 FROM items i WHERE i.box_id = b.id AND i.name LIKE ?1)
-         ORDER BY b.number DESC`,
-      ).bind(`%${q}%`, q.replace(/^#/, ""))
-    : env.DB.prepare(`${base} ORDER BY b.number DESC`);
-  const { results } = await stmt.all();
-  return c.json({ boxes: results });
+  const boxes = await searchBoxes(env.DB, env.OPENAI_API_KEY, c.req.query("q")?.trim() ?? "");
+  return c.json({ boxes });
 });
 
 // Public: anyone with the (unguessable) link can view a box.

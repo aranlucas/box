@@ -6,7 +6,7 @@ A moving-box tracker. Take one photo of what's inside a box. AI lists the conten
 
 - **App:** Expo (React Native) for Android and the web, using Expo Router.
 - **Backend:** a Cloudflare Worker (Hono) with D1 for data and R2 for photos, deployed with the `cf` CLI.
-- **AI:** the Vercel AI SDK with OpenAI vision.
+- **AI:** the Vercel AI SDK with OpenAI vision and text embeddings.
 - **Printing:**
   - Web Bluetooth in Chrome on Android or desktop.
   - Native BLE in the Android app (`react-native-ble-plx`).
@@ -35,6 +35,12 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 - **Creating, listing, searching, editing and printing** need a shared household key. It is stored as the `HOUSEHOLD_KEY` Worker secret and sent as the `x-household-key` header.
 - To set up a device, open `/setup?key=<key>` once.
 
+## Search boxes
+
+Use the search field on the Boxes screen for an item name, a description like “baking supplies,” or a box number like `#12`. Keyword matches appear first, followed by related boxes ranked by meaning. Keyword search also covers notes and works when semantic search is unavailable.
+
+Semantic search sends the query and the box titles, rooms, and item names that need embeddings to OpenAI using the Worker's existing `OPENAI_API_KEY`. D1 caches the embeddings as you search, including for boxes created before the feature was added. Editing a box refreshes its embedding the next time it needs one.
+
 ## Develop
 
 Requires pnpm, Node 24 and the `cf` CLI (signed in).
@@ -53,6 +59,7 @@ cd apps/app && EXPO_PUBLIC_API_URL=http://localhost:8788 pnpm web
 ## Deploy
 
 ```sh
+pnpm --filter worker migrate   # applies D1 migrations, including the search cache
 pnpm run deploy   # exports the Expo web build, then `cf deploy` with the secrets in .dev.vars
 ```
 

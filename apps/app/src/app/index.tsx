@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, ApiError, getHouseholdKey, type BoxSummary } from '@/lib/api';
@@ -7,37 +7,42 @@ import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
 
+type BoxResults = { query: string; boxes: BoxSummary[] } | { query: string; error: string };
+
 export default function Boxes() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [q, setQ] = useState('');
-  const [boxes, setBoxes] = useState<BoxSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (query: string) => {
-    try {
-      setError(null);
-      setBoxes(await api.listBoxes(query));
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) setHasKey(false);
-      else setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
+  const [result, setResult] = useState<BoxResults | null>(null);
+  const query = q.trim();
+  const current = result?.query === query ? result : null;
+  const boxes = current && 'boxes' in current ? current.boxes : null;
+  const error = current && 'error' in current ? current.error : null;
 
   useFocusEffect(
     useCallback(() => {
-      getHouseholdKey().then((k) => {
-        setHasKey(!!k);
-        if (k) load(q);
-      });
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [load]),
-  );
+      const controller = new AbortController();
+      const { signal } = controller;
+      const timer = setTimeout(async () => {
+        const key = await getHouseholdKey();
+        if (signal.aborted) return;
+        setHasKey(!!key);
+        if (!key) return;
 
-  useEffect(() => {
-    if (!hasKey) return;
-    const t = setTimeout(() => load(q), 250);
-    return () => clearTimeout(t);
-  }, [q, hasKey, load]);
+        try {
+          const boxes = await api.listBoxes(query, signal);
+          if (!signal.aborted) setResult({ query, boxes });
+        } catch (e) {
+          if (signal.aborted) return;
+          if (e instanceof ApiError && e.status === 401) setHasKey(false);
+          else setResult({ query, error: e instanceof Error ? e.message : String(e) });
+        }
+      }, query ? 450 : 0);
+      return () => {
+        clearTimeout(timer);
+        controller.abort();
+      };
+    }, [query]),
+  );
 
   if (hasKey === null) return <Screen>{null}</Screen>;
 
@@ -58,25 +63,27 @@ export default function Boxes() {
     <Screen>
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Text style={styles.h1}>Boxes</Text>
-        {boxes ? <Text style={styles.muted}>{boxes.length} {q ? 'found' : 'total'}</Text> : null}
+        {boxes ? <Text style={styles.muted}>{boxes.length} {query ? 'found' : 'total'}</Text> : null}
       </View>
       <PrinterBar />
       <Button label="＋  New box" big onPress={() => router.push('/new')} />
       <Field
         value={q}
         onChangeText={setQ}
-        placeholder="Search: blender, towels, #12…"
+        accessibilityLabel="Search boxes"
+        placeholder="Search for cables, baking supplies, #12…"
         autoCapitalize="none"
         autoCorrect={false}
         clearButtonMode="while-editing"
         returnKeyType="search"
       />
-      {error ? <Banner tone="error">{error}</Banner> : null}
-      {!boxes ? (
-        <ActivityIndicator color={colors.kraft} />
+      {error ? (
+        <Banner tone="error">{error}</Banner>
+      ) : !boxes ? (
+        <ActivityIndicator color={colors.kraft} accessibilityLabel={query ? 'Searching boxes' : 'Loading boxes'} />
       ) : boxes.length === 0 ? (
         <Text style={[styles.muted, { textAlign: 'center', marginTop: space(6) }]}>
-          {q ? 'No boxes match.' : 'No boxes yet. Tap “New box” and photograph what’s inside.'}
+          {query ? 'No boxes match.' : 'No boxes yet. Tap “New box” and photograph what’s inside.'}
         </Text>
       ) : (
         <View style={{ gap: space(2) }}>
