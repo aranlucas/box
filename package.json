@@ -12,8 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
-    "build:web": "pnpm --filter @box/app export:web",
-    "deploy": "pnpm build:web && pnpm --filter @box/worker exec cf deploy --secrets-file .dev.vars"
+    "build:web": "pnpm --filter @box/app export:web"
   },
   "commitlint": {
     "extends": [

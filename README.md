@@ -85,8 +85,17 @@ For a manual deployment, sign in to `cf` and run:
 
 ```sh
 pnpm --filter @box/worker migrate
-pnpm run deploy
+pnpm build:web
+pnpm --filter @box/worker exec cf deploy --secrets-file .dev.vars
 ```
+
+A single deployment can briefly mix HTML and asset requests across versions while Cloudflare updates its edge locations. To keep the current and next releases compatible during the switch, use [Cloudflare's staged rollout for static assets](https://developers.cloudflare.com/workers/versions-and-deployments/version-skew/#plan-for-related-requests):
+
+1. Keep a copy of the live Expo export and build the next export separately.
+2. Stage the live export in `apps/app/dist` and add the next export's hashed files from `_expo/` and `assets/`. Keep the live `index.html` and deploy with `pnpm --filter @box/worker exec cf deploy --no-provision`.
+3. Allow that deployment to propagate, then stage the next export in `apps/app/dist`, keeping the live release's hashed files alongside it. Deploy again with the same command. Use this overlapping build for rollbacks while pages from both releases may be open.
+
+Treat these as two separate deployments. The default Workers Builds command runs a single deployment per push, so run the staged releases separately from automatic builds.
 
 For your own deployment, create a D1 database and R2 bucket. Update [`cloudflare.config.ts`](apps/worker/cloudflare.config.ts) with your Worker and bindings, and point the migration scripts at your D1 database. Set your public origin in the Worker and native app, configure the OIDC issuer and callback, and provision the three runtime secrets.
 

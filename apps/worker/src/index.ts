@@ -11,6 +11,7 @@ import { canAccessHouse, enterHouse, houseRoutes, requireHouse, type HouseEnv } 
 import { printingRoutes } from './printing.ts';
 import { searchBoxes } from './search.ts';
 import { body } from './util.ts';
+import { serveWebFallback } from './web.ts';
 
 // Crockford base32 (no I, L, O, U): uppercase-only so it survives QR alphanumeric mode.
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -342,6 +343,7 @@ api.route('/', houseRoutes);
 api.route('/', printingRoutes);
 app.route('/', authRoutes);
 app.route('/api', api);
+app.get('*', async (c) => (await serveWebFallback(c.req.raw, env.ASSETS)) ?? c.notFound());
 app.onError((error, c) => {
   if (error instanceof HTTPException) {
     return c.json({ error: error.message }, error.status);

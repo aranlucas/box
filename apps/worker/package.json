@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "cf dev",
     "build": "cf build",
-    "deploy": "cf deploy",
     "migrate": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations",
     "migrate:local": "cf d1 migrations apply 52c32efc-6ee3-48d8-8b4e-f41ad071a511 --dir migrations --local",
     "types": "cf workers types",
