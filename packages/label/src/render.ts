@@ -13,6 +13,7 @@ export interface LabelInput {
 }
 
 const QR_AREA = LABEL_H; // square region on the left
+const QR_QUIET_MODULES = 4;
 const TEXT_X = QR_AREA;
 const TEXT_MAX_W = LABEL_W - TEXT_X - 4;
 const NUMBER_SCALE = 5;
@@ -73,21 +74,26 @@ const ALNUM = /^[0-9A-Z $%*+\-./:]*$/;
 function makeQr(url: string) {
   const data = url.toUpperCase();
   const mode = ALNUM.test(data) ? 'Alphanumeric' : 'Byte';
-  const build = (ec: 'L' | 'M') => {
+  let best: { q: ReturnType<typeof qrcode>; cell: number } | undefined;
+
+  // Keep modules as large as possible. Increase correction while the same dot size still fits.
+  for (const ec of ['L', 'M', 'Q', 'H'] as const) {
     const q = qrcode(0, ec);
     q.addData(data, mode);
     q.make();
-    return q;
-  };
-  let q = build('M');
-  if (q.getModuleCount() > 25) q = build('L'); // keep version <= 2 when possible -> bigger modules
-  return q;
+    const modulesWithQuietZone = q.getModuleCount() + 2 * QR_QUIET_MODULES;
+    const cell = Math.floor(QR_AREA / modulesWithQuietZone);
+    if (cell < 1 || (best && cell < best.cell)) break;
+    best = { q, cell };
+  }
+
+  if (!best) throw new Error('The URL is too long to fit a QR code on the label.');
+  return best;
 }
 
 export function drawQr(b: Bitmap, url: string): void {
-  const q = makeQr(url);
+  const { q, cell } = makeQr(url);
   const n = q.getModuleCount();
-  const cell = n * 3 <= QR_AREA - 8 ? 3 : n * 2 <= QR_AREA ? 2 : 1;
   const size = n * cell;
   const x0 = Math.floor((QR_AREA - size) / 2);
   const y0 = Math.floor((LABEL_H - size) / 2);
