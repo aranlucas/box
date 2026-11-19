@@ -18,7 +18,7 @@ Download the APK from [Releases](../../releases) and install it. You'll need to 
 
 1. Open the app and enter your household key.
 2. Turn on the D30.
-3. Tap **Connect printer**. Other devices in your house can now print through this phone while the app is open.
+3. Open **Settings** and tap **Connect printer**. Other devices in your house can now print through this phone while the app is open.
 
 ## Repo layout
 
@@ -45,7 +45,7 @@ Semantic search sends the query and the box titles, rooms, and item names that n
 
 Only one device per house needs the D30 connected. Any other member's device in that house, including an iPhone (Safari has no Web Bluetooth), can print through it. The print button then says **Print label via _device name_**.
 
-- A device with the printer connected and the app open shares it. It heartbeats `POST /api/printers/heartbeat` every 2 s, which keeps its row in the `printer_connections` table fresh. The table is per house (`x-house-id`), and the home screen shows it as **Printers in this house**. While it's sharing, the host keeps its screen on, because a locked phone stops sharing.
+- A device with the printer connected and the app open shares it. It heartbeats `POST /api/printers/heartbeat` every 2 s, which keeps its row in the `printer_connections` table fresh. The table is per house (`x-house-id`), and Settings shows it as **Printers in this house**. While it's sharing, the host keeps its screen on, because a locked phone stops sharing.
 - Other devices queue a `print_jobs` row. The host picks the job up on its next heartbeat, claims it atomically, prints it and reports back. The requesting device polls until it's done.
 - A job nobody claims within 25 s fails with a clear error, so a phone that comes back later never prints stale labels. A host drops off the table 15 s after its last heartbeat, or right away when its printer disconnects or the app goes to the background.
 
