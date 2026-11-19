@@ -86,7 +86,7 @@ cd apps/app && pnpm build:android
 # → android/app/build/outputs/apk/release/app-release.apk
 ```
 
-The build bakes in `EXPO_PUBLIC_API_URL`, the Worker origin the app talks to. Set it to your own deployment.
+The Android app defaults to `https://bx.aranlucas.workers.dev`. Set `EXPO_PUBLIC_API_URL` when building to use a different Worker, such as a preview deployment.
 
 ## D30 protocol (short version)
 
