@@ -13,7 +13,11 @@ test.each([
   { platform: 'android', override: undefined, origin: 'https://bx.aranlucas.workers.dev' },
   { platform: 'android', override: '', origin: 'https://bx.aranlucas.workers.dev' },
   { platform: 'ios', override: undefined, origin: 'https://bx.aranlucas.workers.dev' },
-  { platform: 'android', override: 'https://preview.example.com/', origin: 'https://preview.example.com' },
+  {
+    platform: 'android',
+    override: 'https://preview.example.com/',
+    origin: 'https://preview.example.com',
+  },
   { platform: 'web', override: undefined, origin: '' },
   { platform: 'web', override: 'http://localhost:8788', origin: 'http://localhost:8788' },
 ])('loads members on $platform with API URL $override', async ({ platform, override, origin }) => {

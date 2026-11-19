@@ -13,7 +13,9 @@ let token: string | null | undefined;
 const b64url = (b64: string) => b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 function bytesToBase64(bytes: Uint8Array) {
   let s = '';
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i++) {
+    s += String.fromCharCode(bytes[i]);
+  }
   return btoa(s);
 }
 function queryParam(url: string, name: string): string | null {
@@ -22,7 +24,9 @@ function queryParam(url: string, name: string): string | null {
 }
 
 async function getToken() {
-  if (token === undefined) token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+  if (token === undefined) {
+    token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+  }
   return token;
 }
 
@@ -43,16 +47,22 @@ export async function signIn(_returnTo?: string): Promise<boolean> {
     `${API_BASE}/auth/login?native_challenge=${encodeURIComponent(challenge)}`,
     REDIRECT,
   );
-  if (result.type !== 'success') return false;
+  if (result.type !== 'success') {
+    return false;
+  }
   const code = queryParam(result.url, 'code');
-  if (!code) throw new Error(`Sign-in failed (${queryParam(result.url, 'error') ?? 'no code'})`);
+  if (!code) {
+    throw new Error(`Sign-in failed (${queryParam(result.url, 'error') ?? 'no code'})`);
+  }
   const res = await fetch(`${API_BASE}/auth/native/exchange`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ code, verifier }),
   });
   const body = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
-  if (!res.ok || !body.token) throw new Error(body.error ?? 'Sign-in failed');
+  if (!res.ok || !body.token) {
+    throw new Error(body.error ?? 'Sign-in failed');
+  }
   token = body.token;
   await SecureStore.setItemAsync(TOKEN_KEY, body.token);
   return true;

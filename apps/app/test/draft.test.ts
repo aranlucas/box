@@ -65,7 +65,10 @@ describe('afterSave', () => {
     const saved = { ...toDraft(base), title: 'X' };
     const typedSince = { ...saved, notes: 'fragile' };
     const next = box({ title: 'X', updated_at: 200 });
-    expect(afterSave({ base, draft: typedSince }, saved, next)).toEqual({ base: next, draft: typedSince });
+    expect(afterSave({ base, draft: typedSince }, saved, next)).toEqual({
+      base: next,
+      draft: typedSince,
+    });
   });
 });
 
@@ -77,7 +80,10 @@ describe('afterPhoto', () => {
   test('keeps local edits and appends the items the photo found', () => {
     const base = box();
     const draft = { ...toDraft(base), title: 'Mine' };
-    const withNew = box({ updated_at: 300, items: [...base.items, { id: 'i3', name: 'lid', quantity: null, source: 'ai' }] });
+    const withNew = box({
+      updated_at: 300,
+      items: [...base.items, { id: 'i3', name: 'lid', quantity: null, source: 'ai' }],
+    });
     const next = afterPhoto({ base, draft }, withNew)!;
     expect(next.base).toBe(withNew);
     expect(next.draft.title).toBe('Mine');
@@ -91,6 +97,8 @@ describe('sameHousePlaceholder', () => {
     expect(sameHousePlaceholder('H1')(rows, { queryKey: ['boxes', 'H1', 'pa'] })).toBe(rows);
   });
   test('drops previous rows when the house changes', () => {
-    expect(sameHousePlaceholder('H2')([{ id: 'x' }], { queryKey: ['boxes', 'H1', ''] })).toBeUndefined();
+    expect(
+      sameHousePlaceholder('H2')([{ id: 'x' }], { queryKey: ['boxes', 'H1', ''] }),
+    ).toBeUndefined();
   });
 });

@@ -8,8 +8,12 @@ let cachedId: Promise<string> | null = null;
 export function getDeviceId(): Promise<string> {
   cachedId ??= (async () => {
     const existing = await AsyncStorage.getItem(ID_KEY).catch(() => null);
-    if (existing) return existing;
-    const id = Array.from({ length: 16 }, () => Math.floor(Math.random() * 36).toString(36)).join('');
+    if (existing) {
+      return existing;
+    }
+    const id = Array.from({ length: 16 }, () => Math.floor(Math.random() * 36).toString(36)).join(
+      '',
+    );
     await AsyncStorage.setItem(ID_KEY, id).catch(() => {});
     return id;
   })();

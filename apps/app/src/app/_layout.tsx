@@ -33,7 +33,8 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.bg },
           // The native header can't be confined to the page column on wide web screens; TopBar can.
           ...(Platform.OS === 'web' && { header: (props) => <TopBar {...props} /> }),
-        }}>
+        }}
+      >
         <Stack.Screen name="index" options={{ title: 'Boxes', headerShown: false }} />
         <Stack.Screen name="new" options={{ title: 'New box' }} />
         <Stack.Screen name="b/[id]" options={{ title: 'Box' }} />

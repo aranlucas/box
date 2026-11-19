@@ -9,8 +9,14 @@ export const API_BASE =
 
 /** Origin printed into QR codes. Must be the deployed public origin, never localhost. */
 export function publicOrigin(): string {
-  if (process.env.EXPO_PUBLIC_PUBLIC_ORIGIN) return process.env.EXPO_PUBLIC_PUBLIC_ORIGIN.replace(/\/$/, '');
-  if (API_BASE) return API_BASE;
-  if (Platform.OS === 'web' && typeof window !== 'undefined') return window.location.origin;
+  if (process.env.EXPO_PUBLIC_PUBLIC_ORIGIN) {
+    return process.env.EXPO_PUBLIC_PUBLIC_ORIGIN.replace(/\/$/, '');
+  }
+  if (API_BASE) {
+    return API_BASE;
+  }
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
   return '';
 }

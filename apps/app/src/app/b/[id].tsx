@@ -3,10 +3,38 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ActivityIndicator, Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
-import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
+import {
+  api,
+  ApiError,
+  boxUrl,
+  photoUrl,
+  type Box,
+  type FormDataPhoto,
+  type Item,
+} from '@/lib/api';
+import {
+  afterPhoto,
+  afterSave,
+  changes,
+  hasChanges,
+  toDraft,
+  type Draft,
+  type Edit,
+} from '@/lib/draft';
 import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printAnywhere, remotePrinters, useHousehold } from '@/lib/household';
@@ -37,14 +65,17 @@ export default function BoxScreen() {
   useQuery({ ...queries.printerReconnect(), enabled: box?.can_edit === true });
   const localReady = printer.status === 'connected' || printer.status === 'printing';
   // A printer on another device in this box's house, when this device has none connected.
-  const via = localReady || !box || box.house_id !== household.houseId ? undefined : remotePrinters(household)[0];
+  const via =
+    localReady || !box || box.house_id !== household.houseId
+      ? undefined
+      : remotePrinters(household)[0];
   const printerAvailable = localReady || !!via;
   const printingUnavailable = !printerAvailable && printer.status === 'unsupported';
 
   /** Server returned a fresh box: update the cache and refresh lists. */
   function cache(b: Box) {
     qc.setQueryData(queries.box(boxId).queryKey, { ...b, can_edit: b.can_edit ?? box?.can_edit });
-    qc.invalidateQueries({ queryKey: queries.allBoxes() });
+    void qc.invalidateQueries({ queryKey: queries.allBoxes() });
   }
 
   const dirty = useMemo(() => !!edit && hasChanges(changes(edit.base, edit.draft)), [edit]);
@@ -57,8 +88,12 @@ export default function BoxScreen() {
     mutationFn: async (e: Edit): Promise<Box> => {
       const c = changes(e.base, e.draft);
       let b = e.base;
-      if (c.items) b = await api.saveItems(b.id, c.items, e.base.updated_at);
-      if (Object.keys(c.meta).length) b = await api.updateBox(b.id, c.meta);
+      if (c.items) {
+        b = await api.saveItems(b.id, c.items, e.base.updated_at);
+      }
+      if (Object.keys(c.meta).length) {
+        b = await api.updateBox(b.id, c.meta);
+      }
       return b;
     },
     onSuccess: (b, saved) => {
@@ -67,15 +102,19 @@ export default function BoxScreen() {
     },
     onError: (e) => {
       if (e instanceof ApiError && e.status === 409) {
-        qc.invalidateQueries({ queryKey: queries.box(boxId).queryKey });
+        void qc.invalidateQueries({ queryKey: queries.box(boxId).queryKey });
       }
       setError(e.message);
     },
   });
 
   async function save(): Promise<Box | null> {
-    if (!box) return null;
-    if (!edit || !dirty) return box;
+    if (!box) {
+      return null;
+    }
+    if (!edit || !dirty) {
+      return box;
+    }
     setError(null);
     return saveMut.mutateAsync(edit).catch(() => null);
   }
@@ -90,11 +129,20 @@ export default function BoxScreen() {
     setError(null);
     setNotice(null);
     const b = await save();
-    if (!b) return;
+    if (!b) {
+      return;
+    }
     setPrinting(true);
     try {
-      const { via: printedBy } = await printAnywhere({ number: b.number, title: b.title, url: boxUrl(b.id) }, b.house_id);
-      setNotice(printedBy ? `Label for box #${b.number} printed via ${printedBy}.` : `Label for box #${b.number} sent to the printer.`);
+      const { via: printedBy } = await printAnywhere(
+        { number: b.number, title: b.title, url: boxUrl(b.id) },
+        b.house_id,
+      );
+      setNotice(
+        printedBy
+          ? `Label for box #${b.number} printed via ${printedBy}.`
+          : `Label for box #${b.number} sent to the printer.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -108,18 +156,28 @@ export default function BoxScreen() {
       const added = b.items.length - (box?.items.length ?? 0);
       cache(b);
       setEdit((cur) => afterPhoto(cur, b));
-      setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
+      setNotice(
+        aiFailed
+          ? 'Photo saved, but the AI could not read it.'
+          : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`,
+      );
     },
     onError: (e) => setError(e.message),
   });
 
   async function addPhoto() {
-    if (!box) return;
+    if (!box) {
+      return;
+    }
     setError(null);
     try {
-      if (dirty && !(await save())) return;
+      if (dirty && !(await save())) {
+        return;
+      }
       const photo = await takeBoxPhoto('camera');
-      if (photo) photoMut.mutate(photo);
+      if (photo) {
+        photoMut.mutate(photo);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -133,13 +191,14 @@ export default function BoxScreen() {
       setEdit((cur) => (cur ? { base: b, draft: cur.draft } : null));
     },
   });
-  const toggleStatus = () => box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
+  const toggleStatus = () =>
+    box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
 
   const deleteMut = useMutation({
     mutationFn: () => api.deleteBox(boxId),
     onSuccess: () => {
       qc.removeQueries({ queryKey: queries.box(boxId).queryKey });
-      qc.invalidateQueries({ queryKey: queries.allBoxes() });
+      void qc.invalidateQueries({ queryKey: queries.allBoxes() });
       router.replace('/');
     },
   });
@@ -147,10 +206,14 @@ export default function BoxScreen() {
   const actionError = statusMut.error ?? deleteMut.error;
 
   function remove() {
-    if (!box) return;
+    if (!box) {
+      return;
+    }
     const msg = `Delete box #${box.number}? This cannot be undone.`;
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) deleteMut.mutate();
+      if (window.confirm(msg)) {
+        deleteMut.mutate();
+      }
       return;
     }
     Alert.alert('Delete box', msg, [
@@ -159,21 +222,27 @@ export default function BoxScreen() {
     ]);
   }
 
-  const setItems = (fn: (items: Item[]) => Item[]) => draft && setDraft({ ...draft, items: fn(draft.items) });
+  const setItems = (fn: (items: Item[]) => Item[]) =>
+    draft && setDraft({ ...draft, items: fn(draft.items) });
 
-  const addItem = () =>
+  const addItem = () => {
     void itemForm.handleSubmit(({ name }) => {
       const trimmed = name.trim();
-      if (!trimmed) return;
+      if (!trimmed) {
+        return;
+      }
       setItems((items) => [...items, { name: trimmed, quantity: null, source: 'manual' }]);
       itemForm.reset();
     })();
+  };
 
   if (boxQuery.error && !box) {
     const notFound = boxQuery.error instanceof ApiError && boxQuery.error.status === 404;
     return (
       <Screen>
-        <Banner tone="error">{notFound ? 'This box does not exist (or was deleted).' : boxQuery.error.message}</Banner>
+        <Banner tone="error">
+          {notFound ? 'This box does not exist (or was deleted).' : boxQuery.error.message}
+        </Banner>
       </Screen>
     );
   }
@@ -194,7 +263,9 @@ export default function BoxScreen() {
         headerRight: box.can_edit
           ? () => (
               <PrinterButton
-                availability={printerAvailable ? 'ready' : printingUnavailable ? 'unavailable' : 'setup'}
+                availability={
+                  printerAvailable ? 'ready' : printingUnavailable ? 'unavailable' : 'setup'
+                }
                 onPress={() => setPrinterOptionsOpen(true)}
               />
             )
@@ -219,13 +290,16 @@ export default function BoxScreen() {
             <Text style={styles.muted}>No items listed.</Text>
           ) : (
             box.items.map((it, i) => (
+              // oxlint-disable-next-line react/no-array-index-key -- Read-only notes lines have no IDs.
               <Text key={i} style={styles.body}>
                 • {it.name}
                 {it.quantity ? `  ×${it.quantity}` : ''}
               </Text>
             ))
           )}
-          {box.notes ? <Text style={[styles.muted, { marginTop: space(2) }]}>{box.notes}</Text> : null}
+          {box.notes ? (
+            <Text style={[styles.muted, { marginTop: space(2) }]}>{box.notes}</Text>
+          ) : null}
         </Card>
         <Photos box={box} />
       </Screen>
@@ -235,9 +309,15 @@ export default function BoxScreen() {
   return (
     <Screen>
       {header}
-      <PrinterOptions visible={printerOptionsOpen} houseId={box.house_id} onClose={() => setPrinterOptionsOpen(false)} />
+      <PrinterOptions
+        visible={printerOptionsOpen}
+        houseId={box.house_id}
+        onClose={() => setPrinterOptionsOpen(false)}
+      />
       {fresh === 'ai-failed' ? (
-        <Banner tone="error">The photo was saved but the AI couldn’t read it. Add items by hand or try another photo.</Banner>
+        <Banner tone="error">
+          The photo was saved but the AI couldn’t read it. Add items by hand or try another photo.
+        </Banner>
       ) : fresh ? (
         <Banner>Check the title and list, then print the label.</Banner>
       ) : null}
@@ -257,11 +337,21 @@ export default function BoxScreen() {
           placeholder={`Box ${box.number}`}
           placeholderTextColor={colors.muted}
         />
-        {!layout.fits ? <Text style={[styles.muted, { color: colors.red }]}>Too long for the label — it will be cut off.</Text> : null}
+        {!layout.fits ? (
+          <Text style={[styles.muted, { color: colors.red }]}>
+            Too long for the label — it will be cut off.
+          </Text>
+        ) : null}
       </View>
 
       <Card style={{ alignItems: 'center' }}>
-        <LabelPreview input={{ number: box.number, title: draft.title || `Box ${box.number}`, url: boxUrl(box.id) }} />
+        <LabelPreview
+          input={{
+            number: box.number,
+            title: draft.title || `Box ${box.number}`,
+            url: boxUrl(box.id),
+          }}
+        />
         <Button
           label={
             printing || printer.status === 'printing'
@@ -271,7 +361,9 @@ export default function BoxScreen() {
           big
           busy={printing || printer.status === 'printing' || saving}
           disabled={printingUnavailable}
-          onPress={print}
+          onPress={() => {
+            void print();
+          }}
           style={{ alignSelf: 'stretch' }}
         />
       </Card>
@@ -288,10 +380,15 @@ export default function BoxScreen() {
           <Text style={styles.muted}>{draft.items.length} items</Text>
         </View>
         {draft.items.map((it, i) => (
+          // oxlint-disable-next-line react/no-array-index-key -- The draft contains unsaved items without server IDs.
           <View key={i} style={s.itemRow}>
             <TextInput
               value={it.name}
-              onChangeText={(name) => setItems((items) => items.map((x, j) => (j === i ? { ...x, name: oneLine(name) } : x)))}
+              onChangeText={(name) =>
+                setItems((items) =>
+                  items.map((x, j) => (j === i ? { ...x, name: oneLine(name) } : x)),
+                )
+              }
               {...wrapOnAndroid}
               style={[s.itemInput, { flex: 1 }]}
             />
@@ -299,7 +396,11 @@ export default function BoxScreen() {
               value={it.quantity ? String(it.quantity) : ''}
               onChangeText={(v) => {
                 const n = parseInt(v.replace(/\D/g, ''), 10);
-                setItems((items) => items.map((x, j) => (j === i ? { ...x, quantity: Number.isFinite(n) && n > 0 ? n : null } : x)));
+                setItems((items) =>
+                  items.map((x, j) =>
+                    j === i ? { ...x, quantity: Number.isFinite(n) && n > 0 ? n : null } : x,
+                  ),
+                );
               }}
               placeholder="qty"
               placeholderTextColor={colors.muted}
@@ -309,7 +410,8 @@ export default function BoxScreen() {
             <Pressable
               accessibilityLabel={`Remove ${it.name}`}
               onPress={() => setItems((items) => items.filter((_, j) => j !== i))}
-              style={s.remove}>
+              style={s.remove}
+            >
               <Text style={{ fontSize: 20, color: colors.muted }}>×</Text>
             </Pressable>
           </View>
@@ -330,7 +432,12 @@ export default function BoxScreen() {
       </Card>
 
       <Card>
-        <Field label="Room" value={draft.room} onChangeText={(room) => setDraft({ ...draft, room })} placeholder="e.g. Kitchen" />
+        <Field
+          label="Room"
+          value={draft.room}
+          onChangeText={(room) => setDraft({ ...draft, room })}
+          placeholder="e.g. Kitchen"
+        />
         <Field
           label="Notes"
           value={draft.notes}
@@ -341,10 +448,25 @@ export default function BoxScreen() {
         />
       </Card>
 
-      {dirty ? <Button label="Save changes" onPress={save} busy={saving} /> : null}
+      {dirty ? (
+        <Button
+          label="Save changes"
+          onPress={() => {
+            void save();
+          }}
+          busy={saving}
+        />
+      ) : null}
 
       <Photos box={box} />
-      <Button label="Add another photo" variant="secondary" busy={addingPhoto} onPress={addPhoto} />
+      <Button
+        label="Add another photo"
+        variant="secondary"
+        busy={addingPhoto}
+        onPress={() => {
+          void addPhoto();
+        }}
+      />
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Button
           label={box.status === 'packed' ? 'Mark unpacked' : 'Mark packed'}
@@ -360,17 +482,35 @@ export default function BoxScreen() {
 }
 
 function Photos({ box }: { box: Box }) {
-  if (!box.photos.length) return null;
+  if (!box.photos.length) {
+    return null;
+  }
   return (
-    <ScrollView horizontal style={{ flexGrow: 0 }} showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space(2) }}>
+    <ScrollView
+      horizontal
+      style={{ flexGrow: 0 }}
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{ gap: space(2) }}
+    >
       {box.photos.map((p) => (
         <Pressable
           key={p.id}
           accessibilityRole="imagebutton"
           accessibilityHint="Opens the full-size photo"
-          onPress={() => (Platform.OS === 'web' ? window.open(photoUrl(p.id), '_blank') : void Linking.openURL(photoUrl(p.id)))}
-          style={({ pressed }) => pressed && { opacity: 0.85 }}>
-          <Image source={{ uri: photoUrl(p.id) }} style={s.photo} accessibilityLabel="Photo of box contents" />
+          onPress={() => {
+            if (Platform.OS === 'web') {
+              window.open(photoUrl(p.id), '_blank');
+            } else {
+              void Linking.openURL(photoUrl(p.id));
+            }
+          }}
+          style={({ pressed }) => pressed && { opacity: 0.85 }}
+        >
+          <Image
+            source={{ uri: photoUrl(p.id) }}
+            style={s.photo}
+            accessibilityLabel="Photo of box contents"
+          />
         </Pressable>
       ))}
     </ScrollView>
@@ -382,12 +522,23 @@ function Photos({ box }: { box: Box }) {
 // just blurs, and pasted newlines are flattened by oneLine().
 const wrapOnAndroid =
   Platform.OS === 'android'
-    ? ({ multiline: true, scrollEnabled: false, submitBehavior: 'blurAndSubmit', textAlignVertical: 'center' } as const)
+    ? ({
+        multiline: true,
+        scrollEnabled: false,
+        submitBehavior: 'blurAndSubmit',
+        textAlignVertical: 'center',
+      } as const)
     : {};
 const oneLine = (v: string) => v.replace(/[\r\n]+/g, ' ');
 
 const s = StyleSheet.create({
-  kicker: { fontSize: 14, fontWeight: '700', color: colors.kraftDark, textTransform: 'uppercase', letterSpacing: 0.8 },
+  kicker: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.kraftDark,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
   titleInput: {
     fontSize: 28,
     fontWeight: '800',
