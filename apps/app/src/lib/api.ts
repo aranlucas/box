@@ -32,12 +32,6 @@ export const HOME_ID = 'HOME0000';
 export const boxUrl = (id: string) => `${publicOrigin()}/b/${id}`;
 export const photoUrl = (id: string) => `${API_BASE}/api/photos/${id}`;
 
-/** Current house for list/create calls; set by the session store. */
-let currentHouse: string | null = null;
-export function setApiHouse(id: string | null) {
-  currentHouse = id;
-}
-
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -51,7 +45,6 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   for (const [k, v] of Object.entries(await authHeader())) headers.set(k, v);
-  if (currentHouse && !headers.has('x-house-id')) headers.set('x-house-id', currentHouse);
   if (init.body && typeof init.body === 'string') headers.set('content-type', 'application/json');
   const res = await fetch(`${API_BASE}/api${path}`, { ...init, headers });
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -72,11 +65,17 @@ export const api = {
   inviteInfo: (token: string) => request<InviteInfo>(`/invites/${token}`),
   acceptInvite: (token: string) => request<{ house: House }>(`/invites/${token}/accept`, { method: 'POST' }).then((r) => r.house),
 
-  listBoxes: (q?: string) =>
-    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`).then((r) => r.boxes),
+  listBoxes: (houseId: string, q?: string) =>
+    request<{ boxes: BoxSummary[] }>(`/boxes${q ? `?q=${encodeURIComponent(q)}` : ''}`, {
+      headers: { 'x-house-id': houseId },
+    }).then((r) => r.boxes),
   getBox: (id: string) => request<{ box: Box }>(`/boxes/${id}`).then((r) => r.box),
-  createBox: (photo: FormDataPhoto) =>
-    request<{ box: Box; aiFailed: boolean }>('/boxes', { method: 'POST', body: photoForm(photo) }),
+  createBox: (houseId: string, photo: FormDataPhoto) =>
+    request<{ box: Box; aiFailed: boolean }>('/boxes', {
+      method: 'POST',
+      body: photoForm(photo),
+      headers: { 'x-house-id': houseId },
+    }),
   addPhoto: (id: string, photo: FormDataPhoto) =>
     request<{ box: Box; aiFailed: boolean }>(`/boxes/${id}/photos`, { method: 'POST', body: photoForm(photo) }),
   updateBox: (id: string, patch: Partial<Pick<Box, 'title' | 'room' | 'notes' | 'status'>>) =>

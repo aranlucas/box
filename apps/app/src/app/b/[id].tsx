@@ -1,9 +1,11 @@
 import { titleLayout } from '@mj/label';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { api, boxUrl, photoUrl, type Box, type Item } from '@/lib/api';
+import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Item } from '@/lib/api';
+import { keys } from '@/lib/query';
 import { takeBoxPhoto } from '@/lib/photo';
 import { printLabel, usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
@@ -17,61 +19,55 @@ const toDraft = (b: Box): Draft => ({ title: b.title, room: b.room ?? '', notes:
 export default function BoxScreen() {
   const { id, fresh } = useLocalSearchParams<{ id: string; fresh?: string }>();
   const boxId = (id ?? '').toUpperCase();
-  const [box, setBox] = useState<Box | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const qc = useQueryClient();
+  const boxQuery = useQuery({ queryKey: keys.box(boxId), queryFn: () => api.getBox(boxId) });
+  const box = boxQuery.data ?? null;
+  // Local edits layered on top of the server copy; null = no unsaved changes.
+  const [edits, setEdits] = useState<Draft | null>(null);
+  const draft = edits ?? (box ? toDraft(box) : null);
+  const setDraft = (d: Draft) => setEdits(d);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [addingPhoto, setAddingPhoto] = useState(false);
   const [newItem, setNewItem] = useState('');
   const printer = usePrinter();
 
-  const load = useCallback(async () => {
-    try {
-      const b = await api.getBox(boxId);
-      setBox(b);
-      setDraft(toDraft(b));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [boxId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  /** Server returned a fresh box: update the cache, drop local edits, refresh lists. */
+  function accept(b: Box) {
+    qc.setQueryData(keys.box(boxId), { ...b, can_edit: b.can_edit ?? box?.can_edit });
+    setEdits(null);
+    qc.invalidateQueries({ queryKey: keys.allBoxes });
+  }
 
   const dirty = useMemo(() => {
-    if (!box || !draft) return false;
+    if (!box || !edits) return false;
     return (
-      draft.title !== box.title ||
-      draft.room !== (box.room ?? '') ||
-      draft.notes !== (box.notes ?? '') ||
-      JSON.stringify(draft.items.map((i) => [i.name, i.quantity])) !== JSON.stringify(box.items.map((i) => [i.name, i.quantity]))
+      edits.title !== box.title ||
+      edits.room !== (box.room ?? '') ||
+      edits.notes !== (box.notes ?? '') ||
+      JSON.stringify(edits.items.map((i) => [i.name, i.quantity])) !== JSON.stringify(box.items.map((i) => [i.name, i.quantity]))
     );
-  }, [box, draft]);
+  }, [box, edits]);
 
   const layout = useMemo(() => titleLayout(draft?.title ?? ''), [draft?.title]);
+
+  const saveMut = useMutation({
+    mutationFn: async (d: Draft): Promise<Box> => {
+      let b = box!;
+      if (d.title !== b.title || d.room !== (b.room ?? '') || d.notes !== (b.notes ?? '')) {
+        b = await api.updateBox(b.id, { title: d.title.trim() || `Box ${b.number}`, room: d.room, notes: d.notes });
+      }
+      if (JSON.stringify(d.items) !== JSON.stringify(box!.items)) b = await api.saveItems(b.id, d.items);
+      return b;
+    },
+    onSuccess: accept,
+    onError: (e) => setError(e.message),
+  });
 
   async function save(): Promise<Box | null> {
     if (!box || !draft) return null;
     if (!dirty) return box;
-    setSaving(true);
     setError(null);
-    try {
-      let b = box;
-      if (draft.title !== box.title || draft.room !== (box.room ?? '') || draft.notes !== (box.notes ?? '')) {
-        b = await api.updateBox(box.id, { title: draft.title.trim() || `Box ${box.number}`, room: draft.room, notes: draft.notes });
-      }
-      if (JSON.stringify(draft.items) !== JSON.stringify(box.items)) b = await api.saveItems(box.id, draft.items);
-      setBox(b);
-      setDraft(toDraft(b));
-      return b;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      return null;
-    } finally {
-      setSaving(false);
-    }
+    return saveMut.mutateAsync(draft).catch(() => null);
   }
 
   async function print() {
@@ -87,51 +83,62 @@ export default function BoxScreen() {
     }
   }
 
+  const photoMut = useMutation({
+    mutationFn: (photo: FormDataPhoto) => api.addPhoto(boxId, photo),
+    onSuccess: ({ box: b, aiFailed }) => {
+      const added = b.items.length - (box?.items.length ?? 0);
+      accept(b);
+      setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
+    },
+    onError: (e) => setError(e.message),
+  });
+
   async function addPhoto() {
     if (!box) return;
     setError(null);
     try {
-      if (dirty) await save();
+      if (dirty && !(await save())) return;
       const photo = await takeBoxPhoto('camera');
-      if (!photo) return;
-      setAddingPhoto(true);
-      const { box: b, aiFailed } = await api.addPhoto(box.id, photo);
-      const added = b.items.length - box.items.length;
-      setBox(b);
-      setDraft(toDraft(b));
-      setNotice(aiFailed ? 'Photo saved, but the AI could not read it.' : `Photo added. ${added} new item${added === 1 ? '' : 's'} found.`);
+      if (photo) photoMut.mutate(photo);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAddingPhoto(false);
     }
   }
 
-  async function toggleStatus() {
-    if (!box) return;
-    const b = await api.updateBox(box.id, { status: box.status === 'packed' ? 'unpacked' : 'packed' });
-    setBox(b);
-    setDraft((d) => (d ? { ...d } : d));
-  }
+  const statusMut = useMutation({
+    mutationFn: (status: Box['status']) => api.updateBox(boxId, { status }),
+    onSuccess: (b) => {
+      qc.setQueryData(keys.box(boxId), { ...b, can_edit: box?.can_edit });
+      qc.invalidateQueries({ queryKey: keys.allBoxes });
+    },
+    onError: (e) => setError(e.message),
+  });
+  const toggleStatus = () => box && statusMut.mutate(box.status === 'packed' ? 'unpacked' : 'packed');
 
-  async function remove() {
-    if (!box) return;
-    const doDelete = async () => {
-      await api.deleteBox(box.id);
+  const deleteMut = useMutation({
+    mutationFn: () => api.deleteBox(boxId),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: keys.box(boxId) });
+      qc.invalidateQueries({ queryKey: keys.allBoxes });
       router.replace('/');
-    };
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  function remove() {
+    if (!box) return;
     const msg = `Delete box #${box.number}? This cannot be undone.`;
     if (Platform.OS === 'web') {
-      if (window.confirm(msg)) await doDelete();
+      if (window.confirm(msg)) deleteMut.mutate();
       return;
     }
     Alert.alert('Delete box', msg, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: doDelete },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteMut.mutate() },
     ]);
   }
 
-  const setItems = (fn: (items: Item[]) => Item[]) => setDraft((d) => (d ? { ...d, items: fn(d.items) } : d));
+  const setItems = (fn: (items: Item[]) => Item[]) => draft && setEdits({ ...draft, items: fn(draft.items) });
 
   function addItem() {
     const name = newItem.trim();
@@ -140,10 +147,11 @@ export default function BoxScreen() {
     setNewItem('');
   }
 
-  if (error && !box) {
+  if (boxQuery.error && !box) {
+    const notFound = boxQuery.error instanceof ApiError && boxQuery.error.status === 404;
     return (
       <Screen>
-        <Banner tone="error">{error === 'Not found' ? 'This box does not exist (or was deleted).' : error}</Banner>
+        <Banner tone="error">{notFound ? 'This box does not exist (or was deleted).' : boxQuery.error.message}</Banner>
       </Screen>
     );
   }
@@ -154,6 +162,8 @@ export default function BoxScreen() {
       </Screen>
     );
   }
+  const saving = saveMut.isPending;
+  const addingPhoto = photoMut.isPending;
 
   const header = <Stack.Screen options={{ title: `Box #${box.number}` }} />;
 

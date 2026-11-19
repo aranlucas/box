@@ -1,31 +1,42 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
-import { api } from '@/lib/api';
+import { api, type FormDataPhoto } from '@/lib/api';
+import { keys } from '@/lib/query';
+import { useSession } from '@/lib/session';
 import { takeBoxPhoto } from '@/lib/photo';
 import { Banner, Button, Screen, styles } from '@/ui/components';
 import { colors, space } from '@/ui/theme';
 
 export default function NewBox() {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const { house } = useSession();
+  const qc = useQueryClient();
+  const create = useMutation({
+    mutationFn: (photo: FormDataPhoto) => {
+      if (!house) throw new Error('Pick a house first.');
+      return api.createBox(house.id, photo);
+    },
+    onSuccess: (res) => {
+      qc.setQueryData(keys.box(res.box.id), res.box);
+      qc.invalidateQueries({ queryKey: keys.allBoxes });
+      router.replace({ pathname: '/b/[id]', params: { id: res.box.id, fresh: res.aiFailed ? 'ai-failed' : '1' } });
+    },
+  });
+  const [pickError, setPickError] = useState<string | null>(null);
+  const error = pickError ?? (create.error ? create.error.message : null);
   async function go(source: 'camera' | 'library') {
-    setError(null);
+    setPickError(null);
     try {
       const photo = await takeBoxPhoto(source);
-      if (!photo) return;
-      setBusy(true);
-      const { box, aiFailed } = await api.createBox(photo);
-      router.replace({ pathname: '/b/[id]', params: { id: box.id, fresh: aiFailed ? 'ai-failed' : '1' } });
+      if (photo) create.mutate(photo);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
+      setPickError(e instanceof Error ? e.message : String(e));
     }
   }
 
-  if (busy) {
+  if (create.isPending) {
     return (
       <Screen>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space(4), paddingVertical: space(20) }}>

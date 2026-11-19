@@ -1,9 +1,11 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 
-import { api, type Member, type PendingInvite } from '@/lib/api';
-import { refreshSession, setHouse, useSession } from '@/lib/session-store';
+import { api, type Member } from '@/lib/api';
+import { keys } from '@/lib/query';
+import { useEnterHouse, useSession } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { colors, space } from '@/ui/theme';
 
@@ -24,45 +26,27 @@ export default function HouseScreen() {
   const session = useSession();
   const house = session.house;
   const me = session.me?.user;
-  const [members, setMembers] = useState<Member[] | null>(null);
-  const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const qc = useQueryClient();
+  const enterHouse = useEnterHouse();
+  const people = useQuery({
+    queryKey: keys.members(house?.id ?? ''),
+    queryFn: () => api.members(house!.id),
+    enabled: !!house,
+  });
+  const members = people.data?.members ?? null;
+  const invites = people.data?.invites ?? [];
+  const refreshPeople = () => qc.invalidateQueries({ queryKey: keys.members(house?.id ?? '') });
   const [link, setLink] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [actionError, setError] = useState<string | null>(null);
+  const error = actionError ?? (people.error ? errMsg(people.error) : null);
   const [newHouse, setNewHouse] = useState('');
 
-  const load = useCallback(async () => {
-    if (!house) return;
-    try {
-      const r = await api.members(house.id);
-      setMembers(r.members);
-      setInvites(r.invites);
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, [house]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  if (!house || !me) {
-    return (
-      <Screen>
-        <Banner>Sign in and pick a house first.</Banner>
-      </Screen>
-    );
-  }
-  const isOwner = house.role === 'owner';
-
-  async function invite() {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const { url } = await api.createInvite(house!.id);
+  const inviteMut = useMutation({
+    mutationFn: () => api.createInvite(house!.id),
+    onSuccess: async ({ url }) => {
       setLink(url);
+      refreshPeople();
       const message = `Join “${house!.name}” on Moving Boxes: ${url}`;
       if (Platform.OS === 'web') {
         const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> };
@@ -74,12 +58,46 @@ export default function HouseScreen() {
       } else {
         await Share.share({ message });
       }
-      await load();
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (e) => setError(errMsg(e)),
+  });
+  const revokeMut = useMutation({
+    mutationFn: (inviteId: string) => api.revokeInvite(house!.id, inviteId),
+    onSuccess: refreshPeople,
+    onError: (e) => setError(errMsg(e)),
+  });
+  const removeMut = useMutation({
+    mutationFn: (m: Member) => api.removeMember(house!.id, m.user_id),
+    onSuccess: async (_r, m) => {
+      if (m.user_id === me?.id) {
+        await qc.invalidateQueries({ queryKey: keys.me });
+        router.replace('/');
+      } else refreshPeople();
+    },
+    onError: (e) => setError(errMsg(e)),
+  });
+  const createHouseMut = useMutation({
+    mutationFn: (name: string) => api.createHouse(name),
+    onSuccess: async (h) => {
+      await enterHouse(h);
+      router.replace('/');
+    },
+    onError: (e) => setError(errMsg(e)),
+  });
+
+  if (!house || !me) {
+    return (
+      <Screen>
+        <Banner>Sign in and pick a house first.</Banner>
+      </Screen>
+    );
+  }
+  const isOwner = house.role === 'owner';
+
+  function invite() {
+    setError(null);
+    setNotice(null);
+    inviteMut.mutate();
   }
 
   async function remove(m: Member) {
@@ -89,29 +107,12 @@ export default function HouseScreen() {
       self ? `Leave “${house!.name}”? You’ll need a new invite to come back.` : `Remove ${m.name ?? m.email} from “${house!.name}”?`,
       self ? 'Leave' : 'Remove',
     );
-    if (!ok) return;
-    try {
-      await api.removeMember(house!.id, m.user_id);
-      if (self) {
-        await refreshSession();
-        router.replace('/');
-      } else await load();
-    } catch (e) {
-      setError(errMsg(e));
-    }
+    if (ok) removeMut.mutate(m);
   }
 
-  async function createHouse() {
+  function createHouse() {
     const name = newHouse.trim();
-    if (!name) return;
-    try {
-      const h = await api.createHouse(name);
-      await refreshSession();
-      await setHouse(h.id);
-      router.replace('/');
-    } catch (e) {
-      setError(errMsg(e));
-    }
+    if (name) createHouseMut.mutate(name);
   }
 
   return (
@@ -130,7 +131,7 @@ export default function HouseScreen() {
           <Text style={styles.body}>
             Send a link by text or chat. It works once and expires in 7 days. They’ll sign in, then tap Join.
           </Text>
-          <Button label="Create invite link" busy={busy} onPress={invite} />
+          <Button label="Create invite link" busy={inviteMut.isPending} onPress={invite} />
           {link ? (
             <Text selectable style={s.link}>
               {link}
@@ -145,10 +146,8 @@ export default function HouseScreen() {
                   <Button
                     label="Revoke"
                     variant="danger"
-                    onPress={async () => {
-                      await api.revokeInvite(house.id, i.id).catch((e) => setError(errMsg(e)));
-                      load();
-                    }}
+                    busy={revokeMut.isPending && revokeMut.variables === i.id}
+                    onPress={() => revokeMut.mutate(i.id)}
                   />
                 </View>
               ))}
@@ -184,7 +183,7 @@ export default function HouseScreen() {
           <Text style={styles.h2}>Another house</Text>
           <Text style={styles.muted}>For a second home, storage unit or garage. Box numbers start at 1 in each house.</Text>
           <Field value={newHouse} onChangeText={setNewHouse} placeholder="e.g. Storage unit" onSubmitEditing={createHouse} />
-          <Button label="Create house" variant="secondary" disabled={!newHouse.trim()} onPress={createHouse} />
+          <Button label="Create house" variant="secondary" busy={createHouseMut.isPending} disabled={!newHouse.trim()} onPress={createHouse} />
         </Card>
       ) : null}
     </Screen>

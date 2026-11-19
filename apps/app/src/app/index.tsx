@@ -1,9 +1,11 @@
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { router, useLocalSearchParams } from 'expo-router';
+import { useDeferredValue, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, type BoxSummary } from '@/lib/api';
-import { refreshSession, setHouse, signIn, signOut, useSession } from '@/lib/session-store';
+import { keys } from '@/lib/query';
+import { useEnterHouse, useSetHouse, useSession, useSignIn, useSignOut } from '@/lib/session';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { PrinterBar } from '@/ui/printer-bar';
 import { colors, radius, space } from '@/ui/theme';
@@ -27,29 +29,15 @@ export default function Home() {
 }
 
 function SignedOut({ error }: { error?: string | null }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const signIn = useSignIn();
+  const err = signIn.error ? errMsg(signIn.error) : null;
   return (
     <Screen>
       <Text style={styles.h1}>Moving boxes</Text>
       <Card>
         <Text style={styles.body}>Sign in to pack, print and search your household’s boxes.</Text>
         {error || err ? <Banner tone="error">{err ?? 'Sign-in did not complete. Please try again.'}</Banner> : null}
-        <Button
-          label="Sign in"
-          busy={busy}
-          onPress={async () => {
-            setBusy(true);
-            setErr(null);
-            try {
-              await signIn('/');
-            } catch (e) {
-              setErr(errMsg(e));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
+        <Button label="Sign in" busy={signIn.isPending} onPress={() => signIn.mutate('/')} />
       </Card>
       <Text style={styles.muted}>Just unpacking? Scan the QR code on a box with your phone camera — no sign-in needed.</Text>
     </Screen>
@@ -58,21 +46,11 @@ function SignedOut({ error }: { error?: string | null }) {
 
 function NoHouse({ claimable, name }: { claimable: boolean; name: string | null }) {
   const [key, setKey] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function claim() {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.claimHome(key.trim());
-      await refreshSession();
-    } catch (e) {
-      setErr(errMsg(e));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const enterHouse = useEnterHouse();
+  const signOut = useSignOut();
+  const claimMut = useMutation({ mutationFn: () => api.claimHome(key.trim()), onSuccess: enterHouse });
+  const claim = () => claimMut.mutate();
+  const err = claimMut.error ? errMsg(claimMut.error) : null;
 
   return (
     <Screen>
@@ -93,14 +71,14 @@ function NoHouse({ claimable, name }: { claimable: boolean; name: string | null 
             onSubmitEditing={claim}
           />
           {err ? <Banner tone="error">{err}</Banner> : null}
-          <Button label="Claim Home" busy={busy} disabled={!key.trim()} onPress={claim} />
+          <Button label="Claim Home" busy={claimMut.isPending} disabled={!key.trim()} onPress={claim} />
         </Card>
       ) : null}
       <Card>
         <Text style={styles.h2}>Joining someone’s house?</Text>
         <Text style={styles.body}>Ask a household member to send you an invite link, then open it on this device.</Text>
       </Card>
-      <Button label="Sign out" variant="ghost" onPress={signOut} />
+      <Button label="Sign out" variant="ghost" onPress={() => signOut.mutate()} />
     </Screen>
   );
 }
@@ -109,31 +87,17 @@ function Boxes() {
   const session = useSession();
   const house = session.house!;
   const houses = session.me?.houses ?? [];
+  const setHouse = useSetHouse();
+  const signOut = useSignOut();
   const [q, setQ] = useState('');
-  const [boxes, setBoxes] = useState<BoxSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (query: string) => {
-    try {
-      setError(null);
-      setBoxes(await api.listBoxes(query));
-    } catch (e) {
-      setError(errMsg(e));
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      load(q);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [load, house.id]),
-  );
-
-  useEffect(() => {
-    setBoxes(null);
-    const t = setTimeout(() => load(q), 250);
-    return () => clearTimeout(t);
-  }, [q, house.id, load]);
+  const query = useDeferredValue(q.trim());
+  const list = useQuery({
+    queryKey: keys.boxes(house.id, query),
+    queryFn: () => api.listBoxes(house.id, query),
+    placeholderData: keepPreviousData,
+  });
+  const boxes: BoxSummary[] | undefined = list.data;
+  const error = list.error ? errMsg(list.error) : null;
 
   return (
     <Screen>
@@ -149,7 +113,7 @@ function Boxes() {
           {houses.map((h) => (
             <Pressable
               key={h.id}
-              onPress={() => setHouse(h.id)}
+              onPress={() => setHouse.mutate(h.id)}
               style={[s.chip, h.id === house.id && s.chipOn]}
               accessibilityRole="button"
               accessibilityState={{ selected: h.id === house.id }}>
@@ -205,7 +169,7 @@ function Boxes() {
       <Text style={[styles.muted, { textAlign: 'center' }]}>
         Signed in as {session.me?.user?.name ?? session.me?.user?.email}
       </Text>
-      <Button label="Sign out" variant="ghost" onPress={signOut} />
+      <Button label="Sign out" variant="ghost" onPress={() => signOut.mutate()} />
     </Screen>
   );
 }

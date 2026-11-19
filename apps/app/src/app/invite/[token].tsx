@@ -1,9 +1,10 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 
-import { api, type InviteInfo } from '@/lib/api';
-import { refreshSession, setHouse, signIn, useSession } from '@/lib/session-store';
+import { api, ApiError, type InviteInfo } from '@/lib/api';
+import { keys } from '@/lib/query';
+import { useEnterHouse, useSession, useSignIn } from '@/lib/session';
 import { Banner, Button, Card, Screen, styles } from '@/ui/components';
 import { colors, space } from '@/ui/theme';
 
@@ -16,30 +17,26 @@ const STATUS_COPY: Record<Exclude<InviteInfo['status'], 'valid'>, string> = {
 export default function Invite() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const session = useSession();
-  const [info, setInfo] = useState<InviteInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    api
-      .inviteInfo(token)
-      .then(setInfo)
-      .catch((e) => setError(e?.status === 404 ? 'This invite link is not valid.' : String(e?.message ?? e)));
-  }, [token]);
-
-  async function join() {
-    setBusy(true);
-    setError(null);
-    try {
-      const house = await api.acceptInvite(token);
-      await refreshSession();
-      await setHouse(house.id);
+  const signIn = useSignIn();
+  const enterHouse = useEnterHouse();
+  const inviteQuery = useQuery({ queryKey: keys.invite(token), queryFn: () => api.inviteInfo(token) });
+  const info: InviteInfo | null = inviteQuery.data ?? null;
+  const accept = useMutation({
+    mutationFn: () => api.acceptInvite(token),
+    onSuccess: async (house) => {
+      await enterHouse(house);
       router.replace('/');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBusy(false);
-    }
-  }
+    },
+  });
+  const busy = accept.isPending;
+  const join = () => accept.mutate();
+  const error = inviteQuery.error
+    ? inviteQuery.error instanceof ApiError && inviteQuery.error.status === 404
+      ? 'This invite link is not valid.'
+      : inviteQuery.error.message
+    : accept.error
+      ? accept.error.message
+      : null;
 
   if (error && !info) {
     return (
@@ -67,7 +64,7 @@ export default function Invite() {
         {info.status !== 'valid' ? <Banner tone="error">{STATUS_COPY[info.status]}</Banner> : null}
         {error ? <Banner tone="error">{error}</Banner> : null}
         {!signedIn ? (
-          <Button label="Sign in to join" big onPress={() => signIn(`/invite/${token}`)} disabled={info.status !== 'valid'} />
+          <Button label="Sign in to join" big onPress={() => signIn.mutate(`/invite/${token}`)} disabled={info.status !== 'valid'} />
         ) : (
           // Already-members get 200 from accept even if the link was used, so Join stays enabled.
           <Button label="Join" big busy={busy} onPress={join} />
