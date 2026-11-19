@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Integration check for houses, invites, claim and house-scoped box access.
+// Integration check for houses, invites, claim, house-scoped box access and shared printing.
 // Starts `cf dev` against a throwaway local D1/R2, runs the scenario, then stops it.
 // Usage: node test/api-check.mjs        (from apps/worker)
 import { spawn, execFileSync } from "node:child_process";
@@ -272,6 +272,64 @@ try {
     assert.equal(anon.data.box.can_edit, false);
     assert.equal((await call("GET", `/api/boxes/${garageBox}`, { token: A })).data.box.can_edit, true);
     assert.equal((await call("GET", `/api/boxes/${garageBox}`, { token: Bob })).data.box.can_edit, false);
+  });
+
+  // ---- Shared printing: a member's iPhone prints through another member's connected printer ----
+  const HOME = "HOME0000";
+  const label = { number: 7, title: "Kitchen", url: "https://bx.example/b/AAAA0001" };
+  await check("printing without a connected printer in the house is refused", async () => {
+    const r = await call("POST", "/api/print-jobs", { token: Bob, house: HOME, json: { deviceId: "iphone", label } });
+    assert.equal(r.status, 409, JSON.stringify(r.data));
+  });
+
+  await check("printer routes need membership of the house", async () => {
+    assert.equal((await call("GET", "/api/printers", { house: HOME })).status, 401);
+    assert.equal((await call("GET", "/api/printers", { token: Bob, house: garage })).status, 403);
+    const hb = await call("POST", "/api/printers/heartbeat", { token: C, house: HOME, json: { deviceId: "x", deviceName: "x" } });
+    assert.equal(hb.status, 403);
+  });
+
+  await check("a host's heartbeat lists it in its house only", async () => {
+    const hb = await call("POST", "/api/printers/heartbeat", {
+      token: A,
+      house: HOME,
+      json: { deviceId: "pixel", deviceName: "Pixel 8", printerName: "D30-1234" },
+    });
+    assert.equal(hb.status, 200, JSON.stringify(hb.data));
+    assert.deepEqual(hb.data.jobs, []);
+    const home = (await call("GET", "/api/printers", { token: Bob, house: HOME })).data.printers;
+    assert.deepEqual(home.map((p) => [p.device_id, p.device_name, p.printer_name]), [["pixel", "Pixel 8", "D30-1234"]]);
+    assert.deepEqual((await call("GET", "/api/printers", { token: A, house: garage })).data.printers, []);
+  });
+
+  let jobId;
+  await check("a member queues a label; the host gets it on its next heartbeat, not other houses", async () => {
+    const r = await call("POST", "/api/print-jobs", { token: Bob, house: HOME, json: { deviceId: "iphone", label } });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    assert.equal(r.data.job.via, "Pixel 8");
+    jobId = r.data.job.id;
+    const other = await call("POST", "/api/printers/heartbeat", { token: A, house: garage, json: { deviceId: "pixel", deviceName: "Pixel 8" } });
+    assert.deepEqual(other.data.jobs, []);
+    const hb = await call("POST", "/api/printers/heartbeat", { token: A, house: HOME, json: { deviceId: "pixel", deviceName: "Pixel 8" } });
+    assert.deepEqual(hb.data.jobs.map((j) => [j.id, j.label]), [[jobId, label]]);
+  });
+
+  await check("a job is claimed once, scoped to its house, and completes", async () => {
+    assert.equal((await call("POST", `/api/print-jobs/${jobId}/claim`, { token: A, house: garage, json: { deviceId: "pixel" } })).status, 409);
+    assert.equal((await call("POST", `/api/print-jobs/${jobId}/claim`, { token: A, house: HOME, json: { deviceId: "pixel" } })).status, 200);
+    assert.equal((await call("POST", `/api/print-jobs/${jobId}/claim`, { token: A, house: HOME, json: { deviceId: "other" } })).status, 409);
+    assert.equal((await call("GET", `/api/print-jobs/${jobId}`, { token: A, house: garage })).status, 404);
+    const mid = await call("GET", `/api/print-jobs/${jobId}`, { token: Bob, house: HOME });
+    assert.equal(mid.data.job.status, "printing");
+    assert.equal(mid.data.job.via, "Pixel 8");
+    await call("POST", `/api/print-jobs/${jobId}/complete`, { token: A, house: HOME, json: { deviceId: "pixel", ok: true } });
+    assert.equal((await call("GET", `/api/print-jobs/${jobId}`, { token: Bob, house: HOME })).data.job.status, "done");
+  });
+
+  await check("a host going offline leaves the table", async () => {
+    await call("DELETE", "/api/printers/pixel", { token: A, house: HOME });
+    await call("DELETE", "/api/printers/pixel", { token: A, house: garage });
+    assert.deepEqual((await call("GET", "/api/printers", { token: Bob, house: HOME })).data.printers, []);
   });
 
   await check("owner removes bob; bob loses edit access to Home", async () => {

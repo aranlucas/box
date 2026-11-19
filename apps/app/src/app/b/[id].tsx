@@ -9,7 +9,8 @@ import { api, ApiError, boxUrl, photoUrl, type Box, type FormDataPhoto, type Ite
 import { afterPhoto, afterSave, changes, hasChanges, toDraft, type Draft, type Edit } from '@/lib/draft';
 import { queries } from '@/lib/queries';
 import { takeBoxPhoto } from '@/lib/photo';
-import { printLabel, usePrinter } from '@/lib/printer';
+import { printAnywhere, remotePrinters, useHousehold } from '@/lib/household';
+import { usePrinter } from '@/lib/printer';
 import { Banner, Button, Card, Field, Screen, styles } from '@/ui/components';
 import { FormField } from '@/ui/form-field';
 import { LabelPreview } from '@/ui/label-preview';
@@ -29,7 +30,12 @@ export default function BoxScreen() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const itemForm = useForm<{ name: string }>({ defaultValues: { name: '' } });
+  const [printing, setPrinting] = useState(false);
   const printer = usePrinter();
+  const household = useHousehold();
+  const localReady = printer.status === 'connected' || printer.status === 'printing';
+  // A printer on another device in this box's house, when this device has none connected.
+  const via = localReady || !box || box.house_id !== household.houseId ? undefined : remotePrinters(household)[0];
 
   /** Server returned a fresh box: update the cache and refresh lists. */
   function cache(b: Box) {
@@ -81,11 +87,14 @@ export default function BoxScreen() {
     setNotice(null);
     const b = await save();
     if (!b) return;
+    setPrinting(true);
     try {
-      await printLabel({ number: b.number, title: b.title, url: boxUrl(b.id) });
-      setNotice(`Label for box #${b.number} sent to the printer.`);
+      const { via: printedBy } = await printAnywhere({ number: b.number, title: b.title, url: boxUrl(b.id) }, b.house_id);
+      setNotice(printedBy ? `Label for box #${b.number} printed via ${printedBy}.` : `Label for box #${b.number} sent to the printer.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPrinting(false);
     }
   }
 
@@ -230,10 +239,14 @@ export default function BoxScreen() {
         <LabelPreview input={{ number: box.number, title: draft.title || `Box ${box.number}`, url: boxUrl(box.id) }} />
         <View style={{ alignSelf: 'stretch', gap: space(2) }}>
           <Button
-            label={printer.status === 'printing' ? 'Printing…' : dirty ? 'Save & print label' : 'Print label'}
+            label={
+              printing || printer.status === 'printing'
+                ? 'Printing…'
+                : `${dirty ? 'Save & print label' : 'Print label'}${via ? ` via ${via.device_name}` : ''}`
+            }
             big
-            busy={printer.status === 'printing' || saving}
-            disabled={printer.status === 'unsupported'}
+            busy={printing || printer.status === 'printing' || saving}
+            disabled={printer.status === 'unsupported' && !via}
             onPress={print}
           />
           <PrinterBar />

@@ -4,7 +4,9 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { setHouseholdHouse, startHousehold } from '@/lib/household';
 import { queryClient } from '@/lib/query';
+import { useSession } from '@/lib/session';
 import { colors } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
 
@@ -13,9 +15,11 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 export default function RootLayout() {
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
+    startHousehold(); // share this device's printer with the house / find a printer in it
   }, []);
   return (
     <QueryClientProvider client={queryClient}>
+      <HouseholdSync />
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -31,4 +35,12 @@ export default function RootLayout() {
       </Stack>
     </QueryClientProvider>
   );
+}
+
+/** Keep printer sharing pointed at the house this device is looking at. */
+function HouseholdSync() {
+  const { house } = useSession();
+  const houseId = house?.id ?? null;
+  useEffect(() => setHouseholdHouse(houseId), [houseId]);
+  return null;
 }

@@ -127,7 +127,7 @@ function Boxes() {
           ))}
         </View>
       ) : null}
-      <PrinterBar />
+      <PrinterBar showTable />
       <Button label="＋  New box" big onPress={() => router.push({ pathname: '/new', params: { house: house.id } })} />
       <Field
         value={q}

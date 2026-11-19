@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { extractContents, TITLE_MAX, type Extraction } from "./ai.ts";
 import { authRoutes } from "./auth/routes.ts";
 import { actorFrom, canAccessHouse, HOME_ID, houseRoutes } from "./houses.ts";
+import { printingRoutes } from "./printing.ts";
 
 type Box = {
   id: string;
@@ -304,6 +305,7 @@ app.options("/api/*", (c) =>
   }),
 );
 api.route("/", houseRoutes);
+api.route("/", printingRoutes(requireHouse));
 app.route("/", authRoutes);
 app.route("/api", api);
 app.onError((err, c) => {

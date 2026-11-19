@@ -28,6 +28,12 @@ export type Member = { user_id: string; name: string | null; email: string | nul
 export type PendingInvite = { id: string; created_at: number; expires_at: number };
 export type InviteInfo = { house_name: string; inviter_name: string | null; status: 'valid' | 'used' | 'expired' | 'revoked' };
 
+/** A device in the house that has a printer connected right now (a row of the connection status table). */
+export type HouseholdPrinter = { device_id: string; device_name: string; printer_name: string | null; last_seen: number };
+export type RemoteLabel = { number: number; title: string; url: string };
+export type QueuedJob = { id: string; label: RemoteLabel; requestedBy: string; createdAt: number };
+export type PrintJob = { id: string; status: 'queued' | 'printing' | 'done' | 'failed'; error?: string | null; via: string | null };
+
 /** Best label for a person; null when the auth service gave us neither name nor email. */
 export const displayName = (p: { name: string | null; email: string | null } | null | undefined) =>
   p?.name?.trim() || p?.email?.trim() || null;
@@ -57,6 +63,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 const json = (method: string, data?: unknown): RequestInit => ({ method, body: data === undefined ? undefined : JSON.stringify(data) });
+const inHouse = (houseId: string, init: RequestInit = {}): RequestInit => ({ ...init, headers: { 'x-house-id': houseId } });
 
 export const api = {
   me: () => request<Me>('/me'),
@@ -88,6 +95,22 @@ export const api = {
   saveItems: (id: string, items: Item[], ifUpdatedAt?: number) =>
     request<{ box: Box }>(`/boxes/${id}/items`, json('PUT', { items, if_updated_at: ifUpdatedAt })).then((r) => r.box),
   deleteBox: (id: string) => request<{ ok: true }>(`/boxes/${id}`, { method: 'DELETE' }),
+
+  // Shared printing within a house (see apps/worker/src/printing.ts).
+  listPrinters: (houseId: string) =>
+    request<{ printers: HouseholdPrinter[] }>('/printers', inHouse(houseId)).then((r) => r.printers),
+  printerHeartbeat: (houseId: string, body: { deviceId: string; deviceName: string; printerName?: string }) =>
+    request<{ jobs: QueuedJob[] }>('/printers/heartbeat', inHouse(houseId, json('POST', body))).then((r) => r.jobs),
+  printerOffline: (houseId: string, deviceId: string) =>
+    request<{ ok: true }>(`/printers/${encodeURIComponent(deviceId)}`, inHouse(houseId, { method: 'DELETE' })),
+  createPrintJob: (houseId: string, deviceId: string, label: RemoteLabel) =>
+    request<{ job: PrintJob }>('/print-jobs', inHouse(houseId, json('POST', { deviceId, label }))).then((r) => r.job),
+  getPrintJob: (houseId: string, id: string) =>
+    request<{ job: PrintJob }>(`/print-jobs/${id}`, inHouse(houseId)).then((r) => r.job),
+  claimPrintJob: (houseId: string, id: string, deviceId: string) =>
+    request<{ ok: true }>(`/print-jobs/${id}/claim`, inHouse(houseId, json('POST', { deviceId }))),
+  completePrintJob: (houseId: string, id: string, deviceId: string, result: { ok: boolean; error?: string }) =>
+    request<{ ok: true }>(`/print-jobs/${id}/complete`, inHouse(houseId, json('POST', { deviceId, ...result }))),
 };
 
 /** A photo ready for upload: a Blob on web, a file uri on native. */
