@@ -1,6 +1,6 @@
 import type { BoxRow } from '@mj/api';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import type { ReactElement, ReactNode } from 'react';
+import type { ComponentProps, ReactElement, ReactNode } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,6 @@ import {
   View,
   type ListRenderItem,
   type ScrollViewProps,
-  type TextInputProps,
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -225,7 +224,11 @@ export function LinkButton({
   );
 }
 
-export function Field({ label, style, ...input }: TextInputProps & { label?: string }) {
+export function Field({
+  label,
+  style,
+  ...input
+}: ComponentProps<typeof TextInput> & { label?: string }) {
   return (
     <View style={styles.field}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
