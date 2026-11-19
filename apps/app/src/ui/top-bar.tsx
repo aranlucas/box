@@ -2,10 +2,10 @@ import type { NativeStackHeaderProps } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, MAX_WIDTH, space, TAP } from './theme';
+import { colors, pageColumn, TAP } from './theme';
 
 /**
- * Web-only stack header that lines up with the page: same centred MAX_WIDTH column as <Screen>,
+ * Web-only stack header that lines up with the page: same centred column as <Screen>,
  * title centred, back button at the column's left edge (not the window's) on wide screens.
  * iOS/Android use the native stack header (see _layout.tsx).
  */
@@ -41,15 +41,7 @@ export function TopBar({ navigation, options, route, back }: NativeStackHeaderPr
 
 const s = StyleSheet.create({
   bar: { backgroundColor: colors.bg },
-  inner: {
-    width: '100%',
-    maxWidth: MAX_WIDTH,
-    alignSelf: 'center',
-    height: 56,
-    paddingHorizontal: space(4),
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  inner: { ...pageColumn, height: 56, flexDirection: 'row', alignItems: 'center' },
   // Equal-width sides keep the title centred whether or not there's a back button.
   side: { width: 88, alignItems: 'flex-start' },
   right: { alignItems: 'flex-end' },
