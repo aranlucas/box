@@ -1,8 +1,8 @@
 import { Button as ExpoButton, Host, Picker, Text as ExpoText } from '@expo/ui';
 import { useDbClient, useLiveQuery } from '@tanstack/react-db';
-import { focusManager, onlineManager, useMutation, useQuery } from '@tanstack/react-query';
+import { onlineManager, useMutation, useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   ActivityIndicator,
@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 
 import { api, type BoxSummary, type House, type User } from '@/lib/api';
-import { boxInventory } from '@/lib/boxes';
+import { boxInventory, orderedBoxInventory } from '@/lib/boxes';
 import { queries } from '@/lib/queries';
 import { useEnterHouse, useSession, useSetHouse, useSignIn, useSignOut } from '@/lib/session';
 import {
@@ -185,14 +185,28 @@ function useSearch() {
   const [text, setText] = useState('');
   const input = text.trim();
   const [query, setQuery] = useState('');
-  useEffect(() => {
-    // Clearing the field shows the full list at once.
-    const timer = setTimeout(setQuery, input ? SEARCH_DELAY_MS : 0, input);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [input]);
-  return { text, setText, input, query };
+  const latestInput = useRef('');
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const fieldRef = useCallback((field: unknown) => {
+    if (field === null) {
+      clearTimeout(timer.current);
+    }
+  }, []);
+  function changeText(value: string) {
+    setText(value);
+    const next = value.trim();
+    if (next === latestInput.current) {
+      return;
+    }
+    latestInput.current = next;
+    clearTimeout(timer.current);
+    if (next) {
+      timer.current = setTimeout(setQuery, SEARCH_DELAY_MS, next);
+    } else {
+      setQuery('');
+    }
+  }
+  return { text, changeText, fieldRef, input, query };
 }
 
 function Boxes({ userId, house, houses }: { userId: string; house: House; houses: House[] }) {
@@ -200,27 +214,8 @@ function Boxes({ userId, house, houses }: { userId: string; house: House; houses
   const search = useSearch();
   const db = useDbClient();
   const collection = db.collection(boxInventory(house.id, userId));
-  const inventory = useLiveQuery({
-    query: (q) => q.from({ box: collection }).orderBy(({ box }) => box.number, 'desc'),
-  });
-  const { collection: liveCollection, isLoadingError } = inventory;
-  // A failed first load requires a new DB sync run. Subsequent failures are retried by Query.
-  useEffect(() => {
-    if (!isLoadingError) {
-      return undefined;
-    }
-    const retry = (available: boolean) => {
-      if (available && onlineManager.isOnline()) {
-        void liveCollection.reload().catch(() => {});
-      }
-    };
-    const unsubscribeFocus = focusManager.subscribe(retry);
-    const unsubscribeOnline = onlineManager.subscribe(retry);
-    return () => {
-      unsubscribeFocus();
-      unsubscribeOnline();
-    };
-  }, [isLoadingError, liveCollection]);
+  const liveCollection = orderedBoxInventory(db, house.id, userId);
+  const inventory = useLiveQuery(liveCollection);
 
   const matches = useQuery(queries.boxSearch(house.id, userId, search.query));
   // Rows for an older query are not the answer to what is in the field now.
@@ -242,7 +237,7 @@ function Boxes({ userId, house, houses }: { userId: string; house: House; houses
       }
       if (search.input) {
         await matches.refetch();
-      } else if (isLoadingError) {
+      } else if (inventory.isLoadingError) {
         await liveCollection.reload();
       } else if (!inventory.isCrashed) {
         await collection.utils.refetch();
@@ -326,8 +321,9 @@ function Boxes({ userId, house, houses }: { userId: string; house: House; houses
             </ExpoButton>
           </Host>
           <Field
+            ref={search.fieldRef}
             value={search.text}
-            onChangeText={search.setText}
+            onChangeText={search.changeText}
             accessibilityLabel="Search boxes"
             placeholder="Search for cables, baking supplies, #12…"
             autoCapitalize="none"

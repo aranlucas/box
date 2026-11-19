@@ -8,9 +8,9 @@
 // - Requester: poll the table so the UI can say "Print via <device>", queue a job and wait for it.
 //
 // Both polls are React Query queries, so they pause while the app is in the background.
-import { focusManager, skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
+import { focusManager, skipToken, useQuery } from '@tanstack/react-query';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import { useEffect, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 
 import type { LabelInput } from '@mj/label';
 
@@ -26,6 +26,7 @@ const HEARTBEAT_MS = 2000;
 const JOB_POLL_MS = 1000;
 const JOB_TIMEOUT_MS = 45_000;
 const KEEP_AWAKE_TAG = 'household-printer';
+const HEARTBEAT_KEY = 'printer-heartbeat';
 
 // One print at a time on this device, so a relayed job and a local tap never interleave chunks.
 let printQueue: Promise<unknown> = Promise.resolve();
@@ -86,7 +87,6 @@ async function heartbeat(houseId: string) {
  * a backgrounded app stops advertising and resumes when it comes back.
  */
 export function useSharePrinter(houseId: string | undefined) {
-  const qc = useQueryClient();
   const focused = useSyncExternalStore(
     (onChange) => focusManager.subscribe(onChange),
     () => focusManager.isFocused(),
@@ -96,34 +96,54 @@ export function useSharePrinter(houseId: string | undefined) {
   const hosting = houseId !== undefined && ready && focused ? houseId : undefined;
 
   // The next beat is the retry, so a failed one is not retried on its own.
-  const beat = useQuery({
-    queryKey: ['printer-heartbeat', hosting],
+  useQuery({
+    queryKey: [HEARTBEAT_KEY, hosting],
     queryFn: hosting ? () => heartbeat(hosting) : skipToken,
     refetchInterval: HEARTBEAT_MS,
     retry: false,
     gcTime: 0,
   });
-  const sharing = hosting !== undefined && beat.isSuccess;
-
-  useEffect(() => {
-    if (!hosting || !sharing) {
-      return undefined;
-    }
-    const printers = { queryKey: queries.printers(hosting).queryKey };
-    // The house's table now lists this device; show it without waiting for the next poll.
-    void qc.invalidateQueries(printers);
-    // If the screen auto-locks, the app backgrounds and stops sharing.
-    void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
-    return () => {
-      void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
-      // Leave the table right away instead of waiting to time out of it.
-      void getDeviceId()
-        .then((deviceId) => api.printerOffline(hosting, deviceId))
-        .catch(() => {})
-        .then(() => qc.invalidateQueries(printers));
-    };
-  }, [qc, hosting, sharing]);
 }
+
+function refreshPrinters(houseId: string) {
+  return queryClient.invalidateQueries({ queryKey: queries.printers(houseId).queryKey });
+}
+
+async function stopAdvertising(houseId: string) {
+  // Leave the table right away instead of waiting to time out of it.
+  await getDeviceId()
+    .then((deviceId) => api.printerOffline(houseId, deviceId))
+    .catch(() => {});
+  await refreshPrinters(houseId);
+}
+
+// A single root observer owns the heartbeat. Keep the device awake only while it is sharing.
+let advertisedHouse: string | undefined;
+queryClient.getQueryCache().subscribe(({ type, query }) => {
+  const queryKey: unknown = query.queryKey;
+  if (!Array.isArray(queryKey) || queryKey[0] !== HEARTBEAT_KEY) {
+    return;
+  }
+  const houseId: unknown = queryKey[1];
+  if (typeof houseId !== 'string') {
+    return;
+  }
+  const sharing = type !== 'removed' && query.isActive() && query.state.status === 'success';
+  if (sharing && advertisedHouse !== houseId) {
+    const previousHouse = advertisedHouse;
+    advertisedHouse = houseId;
+    if (previousHouse === undefined) {
+      void activateKeepAwakeAsync(KEEP_AWAKE_TAG).catch(() => {});
+    } else {
+      void stopAdvertising(previousHouse);
+    }
+    void refreshPrinters(houseId);
+  } else if (!sharing && advertisedHouse === houseId) {
+    advertisedHouse = undefined;
+    void deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
+    void stopAdvertising(houseId);
+  }
+});
 
 /**
  * Print a label wherever possible:

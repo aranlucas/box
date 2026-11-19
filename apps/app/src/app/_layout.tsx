@@ -1,9 +1,7 @@
 import { DbProvider } from '@tanstack/react-db';
 import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { Stack, type NativeStackHeaderProps, type NativeStackNavigationOptions } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 import { useSharePrinter } from '@/lib/household';
@@ -12,8 +10,6 @@ import { dbClient, queryClient } from '@/lib/query';
 import { useSession } from '@/lib/session';
 import { colors } from '@/ui/theme';
 import { TopBar } from '@/ui/top-bar';
-
-void SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const screenOptions: NativeStackNavigationOptions = {
   headerStyle: { backgroundColor: colors.bg },
@@ -29,9 +25,6 @@ const screenOptions: NativeStackNavigationOptions = {
 };
 
 export default function RootLayout() {
-  useEffect(() => {
-    void SplashScreen.hideAsync().catch(() => {});
-  }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <DbProvider client={dbClient}>
