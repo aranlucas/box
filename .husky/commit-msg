@@ -1,0 +1,10 @@
+message=$(git stripspace --strip-comments < "$1") || exit 1
+subject=$(printf '%s\n' "$message" | head -n 1)
+
+# Keep Git's generated merge, revert, and autosquash subjects usable.
+case "$subject" in
+  'Merge '*) [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ] || exit 0 ;;
+  'Revert "'*'"'|fixup!\ *|squash!\ *|amend!\ *) exit 0 ;;
+esac
+
+node scripts/check-conventional-title.mjs "$subject"
