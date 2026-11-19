@@ -6,7 +6,10 @@ export default defineConfig({
     // Kept deliberately short: the hostname is printed inside every label's QR code.
     name: "bx",
     compatibilityDate: "2026-10-23",
-    compatibilityFlags: ["nodejs_compat"],
+    // global_fetch_strictly_public: fetch() to another Worker on this account's workers.dev
+    // subdomain (the auth service) is otherwise blocked with error 1042.
+    compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
+    observability: { enabled: true },
     entrypoint,
     assets: {
       notFoundHandling: "single-page-application",

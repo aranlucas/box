@@ -77,7 +77,7 @@ authRoutes.get("/auth/callback", async (c) => {
     });
     identity = await verifyIdToken(id_token, { clientId: env.AUTH_CLIENT_ID, nonce: req.nonce });
   } catch (err) {
-    console.error("Sign-in failed", err);
+    console.error(`Sign-in failed: ${err instanceof Error ? err.message : String(err)}`);
     return fail("sign_in_failed");
   }
 
