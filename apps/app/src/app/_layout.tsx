@@ -51,8 +51,9 @@ export default function RootLayout() {
  */
 function HouseholdSync() {
   const { house } = useSession();
-  useQuery(queries.printerReconnect());
   const houseId = house?.id ?? null;
+  // Only once this device is in a house: a signed-out device has nobody to share the printer with.
+  useQuery({ ...queries.printerReconnect(), enabled: !!houseId });
   useEffect(() => setHouseholdHouse(houseId), [houseId]);
   return null;
 }
